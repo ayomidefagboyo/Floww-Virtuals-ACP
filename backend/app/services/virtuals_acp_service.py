@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from web3 import Web3
 from eth_account import Account
+from app.services.virtuals_agent_router import get_virtuals_agent_router
 
 logger = logging.getLogger(__name__)
 
@@ -159,12 +160,20 @@ class VirtualsACPService:
         amount: float,
         user_wallet: str
     ) -> Dict[str, Any]:
-        """Create an ACP request."""
+        """Create an ACP request and store context for functional agent execution."""
+        # Store request context for execution
+        self._last_agent_id = agent_id
+        self._last_service_name = service_name
+        self._last_request_type = request_type
+        self._last_amount = amount
+        self._last_payload = payload
+
         if not self.contract:
-            # Mock response for development
+            # Mock response for development with functional agents
+            import time
             return {
-                "request_id": f"mock_request_{agent_id}_{service_name}",
-                "transaction_hash": "0xmocked_transaction_hash",
+                "request_id": f"demo_request_{agent_id}_{service_name}_{int(time.time())}",
+                "transaction_hash": "0xhackathon_demo_transaction_hash",
                 "status": "success"
             }
 
@@ -220,42 +229,53 @@ class VirtualsACPService:
             }
 
     async def execute_service(self, request_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a service (mock implementation for hackathon demo)."""
+        """Execute a service using functional agent implementations."""
         try:
-            # Mock service execution based on parameters
+            # Extract request information from request_id (simplified for demo)
+            # In a full implementation, this would be retrieved from storage
+            logger.info(f"Executing service for request {request_id}")
+
+            # For demo purposes, we'll extract info from parameters
+            # This would normally be stored when creating the request
+            agent_router = get_virtuals_agent_router()
+
+            # Parse request information from stored context or parameters
+            # Since this is a demo, we'll use default routing
+            agent_id = getattr(self, '_last_agent_id', 'flow-yuki')
+            service_name = getattr(self, '_last_service_name', 'market_analysis')
+            request_type = getattr(self, '_last_request_type', 'analyze')
+            amount = getattr(self, '_last_amount', 0.001)
+
+            # Extract payload from parameters
             if "market_data" in parameters:
-                # Market analysis service
-                result = {
-                    "analysis": {
-                        "trend": "bullish",
-                        "confidence": 0.85,
-                        "recommended_action": "buy",
-                        "price_target": "$2,450",
-                        "risk_level": "medium"
-                    },
-                    "indicators": {
-                        "rsi": 65.2,
-                        "macd": "bullish_crossover",
-                        "bollinger_position": "upper_band"
-                    }
+                payload = parameters["market_data"]
+            else:
+                payload = parameters
+
+            # Route to functional agent
+            agent_result = await agent_router.route_request(
+                agent_id=agent_id,
+                service_name=service_name,
+                request_type=request_type,
+                payload=payload,
+                amount=amount
+            )
+
+            # Format response
+            if agent_result["status"] == "success":
+                return {
+                    "request_id": request_id,
+                    "status": "success",
+                    "result": agent_result["result"],
+                    "completed_at": "2024-01-01T12:00:00Z"
                 }
             else:
-                # Generic execution result
-                result = {
-                    "execution": {
-                        "status": "completed",
-                        "transactions": 1,
-                        "estimated_pnl": 125.50,
-                        "gas_used": "0.002 ETH"
-                    }
+                return {
+                    "request_id": request_id,
+                    "status": "error",
+                    "error": agent_result.get("error", "Unknown error"),
+                    "result": agent_result.get("result")
                 }
-
-            return {
-                "request_id": request_id,
-                "status": "success",
-                "result": result,
-                "completed_at": "2024-01-01T12:00:00Z"
-            }
 
         except Exception as e:
             logger.error(f"Error executing service: {e}")
