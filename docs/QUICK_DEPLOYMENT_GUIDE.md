@@ -58,12 +58,12 @@ cp .env.example .env
 # BACKEND_PRIVATE_KEY=0x...
 
 # Start the server
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8001
 ```
 
 **Expected Output:**
 ```
-INFO:     Uvicorn running on http://127.0.0.1:8000
+INFO:     Uvicorn running on http://127.0.0.1:8001
 INFO:     VirtualsACP contract loaded at 0x486426C26B357a415722dEBc19E9B6082c481176
 ```
 
@@ -71,10 +71,10 @@ INFO:     VirtualsACP contract loaded at 0x486426C26B357a415722dEBc19E9B6082c481
 
 ```bash
 # Test the API
-curl http://localhost:8000/
+curl http://localhost:8001/
 
 # Test unified endpoint
-curl -X POST "http://localhost:8000/api/virtuals/request" \
+curl -X POST "http://localhost:8001/api/virtuals/request" \
   -H "Content-Type: application/json" \
   -d '{
     "agentId": "flow-yuki",
@@ -99,7 +99,7 @@ cd examples && ./curl.sh
 npm install -g ngrok
 
 # Create tunnel
-ngrok http 8000
+ngrok http 8001
 
 # Use the https URL in Virtuals dashboard
 ```
@@ -175,7 +175,7 @@ GAS_LIMIT=5000000 ./deploy-virtuals-acp.sh
 **Backend connection issues:**
 ```bash
 # Test locally first
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 # Check environment variables
 python -c "from app.config.settings import settings; print(settings.VIRTUALS_ACP_CONTRACT_ADDRESS)"
