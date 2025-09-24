@@ -195,12 +195,6 @@ BASESCAN_API_KEY=YOUR_BASESCAN_KEY
 - `GET /api/virtuals/status` - Integration status
 - `GET /health` - Health check
 
-## 📚 Documentation
-
-- [HOW_VIRTUALS_INTEGRATION_WORKS.md](docs/HOW_VIRTUALS_INTEGRATION_WORKS.md) - Technical details
-- [QUICK_DEPLOYMENT_GUIDE.md](docs/QUICK_DEPLOYMENT_GUIDE.md) - Deployment instructions
-- [contracts/DEPLOY_VIRTUALS_ACP.md](contracts/DEPLOY_VIRTUALS_ACP.md) - Contract deployment
-
 ## 🎪 Demo
 
 Run the example script to see all agents in action:
@@ -218,8 +212,3 @@ This will demonstrate:
 - Never commit `.env` files
 - Use separate keys for testnet and mainnet
 - All transactions are signed and verified onchain
-- No private keys or secrets in this repository
-
----
-
-Built for the **Virtuals Ethereum AI Hackathon** 🏆
