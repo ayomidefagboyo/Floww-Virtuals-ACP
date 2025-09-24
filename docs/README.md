@@ -2,13 +2,13 @@
 
 Floww AI agents integration with the Virtuals Agent Commerce Protocol (ACP) for the Ethereum AI Hackathon. This repository contains a complete onchain agent commerce system with three specialized AI trading agents deployed on Base network.
 
-## 🎯 Project Overview
+## Platform Overview
 
 Floww provides three AI trading agents that integrate with the Virtuals platform through a custom ACP implementation:
 
-- **Yuki** 🔥 - Aggressive futures trading with high-risk, high-reward strategies (0.001 ETH)
-- **Sakura** 🌸 - Conservative yield farming and DeFi strategies (0.0005 ETH)
-- **Ryu** ⚖️ - Balanced spot trading with AI-powered analysis (0.0005 ETH)
+- **Yuki** 🔥 - Futures trading agent that generate 5 best trading opportinities 
+- **Sakura** 🌸 - Conservative yield farming and DeFi strategies 
+- **Ryu** ⚖️ - Token Analysis AI Agent
 
 All agents operate through a fully onchain ACP protocol with no offchain database dependencies.
 
