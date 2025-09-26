@@ -533,8 +533,8 @@ Guidelines:
             if self.provider == LLMProvider.CLAUDE:
                 response = await asyncio.to_thread(
                     self.client.messages.create,
-                    model="claude-3-haiku-20240307",  # Fast and cost-effective
-                    max_tokens=1500,
+                    model="claude-3-sonnet-20240229",  # Superior reasoning for trading decisions
+                    max_tokens=2000,
                     temperature=0.1,  # Low temperature for consistent analysis
                     messages=[{"role": "user", "content": prompt}]
                 )

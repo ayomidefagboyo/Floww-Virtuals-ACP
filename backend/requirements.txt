@@ -5,3 +5,28 @@ pydantic>=2.6.0,<3.0.0
 pydantic-settings>=2.2.1,<3.0.0
 eth-account>=0.12.0
 python-dotenv>=1.0.0
+
+# Trading and Market Data
+ccxt==4.1.64
+pandas==2.1.4
+numpy==1.25.2
+ta-lib>=0.6.7
+
+# ML and Analysis
+scikit-learn==1.3.2
+scipy==1.11.4
+
+# AI/LLM
+anthropic==0.8.1
+
+# Database
+asyncpg==0.29.0
+alembic==1.13.1
+
+# Utilities
+python-dateutil==2.8.2
+pytz==2023.3
+requests==2.31.0
+websockets==12.0
+aiohttp==3.9.1
+httpx==0.25.2

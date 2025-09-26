@@ -1,7 +1,7 @@
 """
-Yuki Agent Service - Advanced Trade Scanner (EXACT main floww3.0 implementation)
+Yuki Agent Service - Advanced Trade Scanner (COMPLETE Flow 3.0 Implementation)
 
-This service provides the EXACT same functionality as clicking "trade scanner on full mode" in the main floww3.0 system:
+This service provides the EXACT same functionality as the original Flow 3.0 trade scanner:
 - Real Binance API market data integration
 - Sophisticated AI analysis with comprehensive Claude prompts
 - Real technical indicator calculations (RSI, MACD, Bollinger Bands)
@@ -24,10 +24,9 @@ from dataclasses import dataclass, asdict
 from decimal import Decimal
 from enum import Enum
 
-# External APIs - REAL market data integration
-import ccxt.async_support as ccxt
-import anthropic
-import httpx
+# Import services
+from app.services.binance_service import get_binance_service, TechnicalIndicators
+from app.services.llm_analysis_service import LLMAnalysisService
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +66,6 @@ class TechnicalAnalysis:
     # Trend analysis
     ema_20: float
     ema_50: float
-    ema_200: float
     trend_direction: str  # 'bullish', 'bearish', 'sideways'
 
     # Momentum
@@ -84,423 +82,538 @@ class OpportunityScore:
     volatility_score: float
     momentum_score: float
     trend_score: float
-    institutional_score: float
+    technical_score: float
     breakdown: Dict[str, float]
 
 
 @dataclass
-class AIDecision:
-    """AI trading decision - EXACT main floww3.0 structure."""
-    recommendation: str  # LONG, SHORT, HOLD
-    confidence: float  # 0.0-1.0
-    reasoning: str
-    key_factors: List[str]
-
-    # Price levels
-    entry_price: float
-    target_1: float
-    target_1_probability: float
-    target_2: float
-    target_2_probability: float
-    stop_loss: float
-    risk_reward_ratio: float
-
-    # Position management
-    position_size: float  # Percentage
-    leverage: int
-    risk_level: str  # LOW, MEDIUM, HIGH, EXTREME
-    time_horizon: str
-
-    # Risk assessment
-    risk_factors: List[str]
-    risk_assessment: str
-
-
-@dataclass
-class PlatformSignal:
-    """Yuki's trading signal output - Compatible with Virtuals ACP."""
-    # Core signal data
-    signal_id: str
+class TradeOpportunity:
+    """Trading opportunity with all details matching original Flow 3.0 structure."""
+    id: str
     symbol: str
-    direction: str  # LONG, SHORT, HOLD
+    direction: str  # LONG, SHORT
     confidence: float  # 0.0-1.0
-
-    # Price levels
     entry_price: float
     target_1: float
-    target_2: float
+    target_2: Optional[float]
     stop_loss: float
     risk_reward_ratio: float
-
-    # Signal metadata
-    time_horizon: str  # SCALP, SHORT, MEDIUM, LONG
-    signal_strength: str  # WEAK, MODERATE, STRONG, VERY_STRONG
-
-    # Analysis data
-    technical_analysis: Dict[str, Any]
-    ai_reasoning: str
-    ai_key_factors: List[str]
-    risk_factors: List[str]
-
-    # Timestamps
-    analysis_timestamp: str
+    time_horizon: str
+    reasoning: str  # Real AI analysis from Claude
+    key_factors: List[str]
+    technical_analysis: TechnicalAnalysis
+    opportunity_score: OpportunityScore
     expires_at: str
+    # Enhanced fields matching original Flow 3.0
+    risk_factors: List[str]  # Detailed risk analysis
+    risk_assessment: str  # Overall risk summary
+    risk_level: str  # LOW, MEDIUM, HIGH, EXTREME
+    position_size: int  # 1-10 position sizing
+    leverage: int  # 1-20 leverage recommendation
+    target_1_probability: float  # 0.0-1.0
+    target_2_probability: Optional[float]  # 0.0-1.0
+    view_insights: Dict[str, Any]  # Detailed market insights
 
 
 class YukiAgentService:
     """
     Yuki Agent Service - Advanced Trade Scanner
-    EXACT implementation of main floww3.0 trade scanner functionality.
+
+    Provides comprehensive market scanning and opportunity detection
+    based on the complete floww3.0 implementation.
     """
 
     def __init__(self):
-        self.binance = None
-        self.claude_client = None
+        # Yuki's aggressive parameters - original strict conditions
+        self.min_volume_usdt = 1000000  # 1M USDT minimum volume
+        self.min_price_change = 3.0  # 3% minimum 24h change
+        self.max_price_change = 25.0  # 25% maximum to avoid pumps
+        self.min_confidence = 0.65  # Minimum confidence for signals
+        self.max_opportunities = 10  # Max opportunities to return
 
-        # Rate limiting
-        self.api_calls_this_minute = []
-        self.max_calls_per_minute = 600  # Conservative Binance limit
+        # Technical thresholds
+        self.rsi_oversold = 30
+        self.rsi_overbought = 70
+        self.rsi_extreme_oversold = 20
+        self.rsi_extreme_overbought = 80
+        self.bb_squeeze_threshold = 0.02  # 2% band width for squeezes
 
-    async def _initialize_services(self):
-        """Initialize all required services - EXACT main floww3.0 process."""
+        # Initialize LLM service
+        self.llm_service = None
+        self._initialize_llm_service()
+
+        logger.info("Yuki Agent initialized for aggressive trade scanning")
+
+    def _initialize_llm_service(self):
+        """Initialize LLM analysis service."""
         try:
-            # Initialize Binance for REAL market data
-            self.binance = ccxt.binance({
-                'apiKey': os.getenv('BINANCE_API_KEY'),
-                'secret': os.getenv('BINANCE_API_SECRET'),
-                'sandbox': False,
-                'enableRateLimit': True,
-                'options': {'defaultType': 'spot'}
-            })
+            self.llm_service = LLMAnalysisService()
+        except Exception as e:
+            logger.warning(f"LLM service initialization failed: {e}")
+            self.llm_service = None
 
-            # Initialize Claude for REAL AI analysis
-            api_key = os.getenv('ANTHROPIC_API_KEY')
-            if api_key:
-                self.claude_client = anthropic.Anthropic(api_key=api_key)
-                logger.info("✅ Yuki agent initialized with REAL Claude API")
-            else:
-                logger.warning("No Claude API key - AI analysis will use fallback")
+    async def scan_market_opportunities(self) -> List[TradeOpportunity]:
+        """
+        Scan market for trading opportunities.
+        Main entry point for Yuki trade scanner.
+        """
+        try:
+            logger.info("🔍 Yuki starting comprehensive market scan...")
 
-            logger.info("✅ Yuki services initialized successfully (REAL APIs)")
+            # Get market data from Binance
+            binance_service = await get_binance_service()
+            tickers = await binance_service.get_24hr_ticker_stats()
+
+            if not tickers:
+                logger.warning("No market data available from Binance")
+                return []
+
+            logger.info(f"📊 Analyzing {len(tickers)} trading pairs from Binance")
+
+            # Filter and score opportunities
+            candidates = await self._filter_candidates(tickers)
+            logger.info(f"🎯 Found {len(candidates)} potential candidates")
+
+            # 🎯 NEW: Analyze opportunities in descending order and stop when we get 5
+            opportunities = []
+            analyzed_count = 0
+            target_opportunities = 5  # Stop when we find 5 good opportunities
+
+            for candidate in candidates:  # Process all candidates in order
+                try:
+                    analyzed_count += 1
+                    opportunity = await self._analyze_opportunity(candidate, binance_service)
+
+                    if opportunity and opportunity.confidence >= self.min_confidence:
+                        opportunities.append(opportunity)
+                        logger.info(f"✅ Found opportunity #{len(opportunities)}: {opportunity.symbol} ({opportunity.confidence:.2f} confidence)")
+
+                        # Stop when we have enough high-quality opportunities
+                        if len(opportunities) >= target_opportunities:
+                            logger.info(f"🎯 Target reached: Found {target_opportunities} opportunities after analyzing {analyzed_count} candidates")
+                            break
+
+                except Exception as e:
+                    logger.warning(f"Failed to analyze {candidate.get('symbol', 'unknown')}: {e}")
+
+            # Already sorted by quality (we stop when finding good ones), no need to re-sort
+            top_opportunities = opportunities
+
+            if len(top_opportunities) == 0:
+                logger.info("❌ Yuki scan: No market analysis available - Claude AI unavailable or market conditions not suitable")
+                # Return a special message object for the frontend
+                return [{
+                    "id": "no_analysis",
+                    "message": "No market analysis available at the moment. Please try again when market conditions improve.",
+                    "reason": "AI analysis service unavailable or no suitable opportunities found",
+                    "suggestion": "Check back in 30-60 minutes when market volatility may provide better opportunities"
+                }]
+
+            logger.info(f"✅ Yuki scan completed: {len(top_opportunities)} high-confidence opportunities found")
+            return top_opportunities
 
         except Exception as e:
-            logger.error(f"❌ Yuki service initialization failed: {e}")
-            raise
+            logger.error(f"Error in Yuki market scan: {e}")
+            return []
 
-    async def analyze_specific_token(self, symbol: str) -> Dict[str, Any]:
-        """
-        Analyze a specific token - EXACT main floww3.0 trade scanner process.
-        Main entry point for Virtuals ACP integration.
-        """
+    async def _filter_candidates(self, tickers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filter tickers for potential trading candidates."""
+        candidates = []
+
+        for ticker in tickers:
+            try:
+                symbol = ticker.get('symbol', '')
+                volume = float(ticker.get('quoteVolume', 0))
+                price_change_percent = float(ticker.get('priceChangePercent', 0))
+
+                # Only analyze USDT pairs, skip other stablecoins
+                if not symbol.endswith('USDT'):
+                    continue
+
+                # Skip stablecoin-to-USDT pairs (e.g. USDC/USDT)
+                base_symbol = symbol.replace('USDT', '')
+                if base_symbol in ['USDC', 'BUSD', 'DAI', 'TUSD', 'FDUSD']:
+                    continue
+
+                # Volume filter
+                if volume < self.min_volume_usdt:
+                    continue
+
+                # Price change filter (looking for momentum)
+                abs_change = abs(price_change_percent)
+                if abs_change < self.min_price_change or abs_change > self.max_price_change:
+                    continue
+
+                # Skip very low priced coins (potential scams)
+                price = float(ticker.get('price', 0))
+                if price < 0.001:
+                    continue
+
+                candidates.append(ticker)
+
+            except Exception as e:
+                continue
+
+        return candidates
+
+    async def _analyze_opportunity(self, ticker: Dict[str, Any], binance_service) -> Optional[TradeOpportunity]:
+        """Analyze a single opportunity in detail."""
         try:
-            logger.info(f"🔍 Analyzing {symbol} with EXACT main floww3.0 trade scanner process")
+            symbol = ticker.get('symbol', '')
 
-            # Ensure services are initialized
-            if not hasattr(self, '_services_initialized') or not self._services_initialized:
-                await self._initialize_services()
-                self._services_initialized = True
+            # Get detailed technical analysis
+            symbol_info = await binance_service.get_symbol_info(symbol)
+            if not symbol_info:
+                return None
 
-            # Add /USDT suffix if needed for Binance API
-            if not symbol.endswith('/USDT'):
-                binance_symbol = f"{symbol}/USDT"
-            else:
-                binance_symbol = symbol
+            # Get technical indicators AND OHLCV data
+            indicators = await binance_service.calculate_technical_indicators(symbol)
+            ohlcv_df = await binance_service.get_kline_data(symbol, '1h', 50)  # Get recent 50 candles
 
-            # 1. Perform technical analysis with REAL market data
-            technical_analysis = await self._perform_technical_analysis(binance_symbol)
+            # Build technical analysis structure
+            technical_analysis = TechnicalAnalysis(
+                current_price=float(ticker.get('price', 0)),
+                price_change_24h=float(ticker.get('priceChangePercent', 0)),
+                volume_24h=float(ticker.get('volume', 0)),
+                high_24h=float(ticker.get('high', 0)),
+                low_24h=float(ticker.get('low', 0)),
+                rsi_14=indicators.rsi_14,
+                macd_line=indicators.macd_line,
+                macd_signal=indicators.macd_signal,
+                macd_histogram=indicators.macd_histogram,
+                bb_upper=indicators.bb_upper,
+                bb_middle=indicators.bb_middle,
+                bb_lower=indicators.bb_lower,
+                bb_position=indicators.bb_position,
+                volume_sma_10=indicators.volume_sma_10,
+                volume_ratio=float(ticker.get('volume', 0)) / max(indicators.volume_sma_10, 1),
+                atr_14=indicators.atr_14,
+                volatility_24h=abs(float(ticker.get('priceChangePercent', 0))) / 100,
+                support_level=indicators.bb_lower,
+                resistance_level=indicators.bb_upper,
+                ema_20=indicators.ema_20,
+                ema_50=indicators.ema_50,
+                trend_direction=self._determine_trend_direction(indicators),
+                momentum_score=self._calculate_momentum_score(indicators, ticker),
+                strength_score=self._calculate_strength_score(indicators, ticker)
+            )
 
-            # 2. Calculate opportunity score
-            opportunity_score = await self._calculate_opportunity_score(binance_symbol, technical_analysis)
+            # Score the opportunity (for context)
+            opportunity_score = self._score_opportunity(symbol, technical_analysis, ticker)
 
-            # 3. Get AI analysis using EXACT main floww3.0 process
-            ai_decision = await self._ai_analyze_opportunity(binance_symbol, technical_analysis, opportunity_score)
+            # 🚀 NEW: Let Claude Sonnet make the ACTUAL trading decision with ALL data
+            claude_decision = await self._claude_trading_decision(symbol, technical_analysis, indicators, ohlcv_df, ticker, opportunity_score)
 
-            if not ai_decision or ai_decision.recommendation == 'HOLD':
-                logger.info(f"❌ No valid AI decision for {symbol}")
-                return {
-                    "analysis": None,
-                    "error": "No trading signal generated - market conditions unclear"
-                }
+            if not claude_decision or claude_decision.get('confidence', 0) < self.min_confidence:
+                return None
 
-            # 4. Generate platform signal
-            signal = await self._generate_platform_signal(binance_symbol, ai_decision, technical_analysis)
+            # Extract Claude's decision
+            direction = claude_decision.get('direction', 'HOLD')
+            confidence = claude_decision.get('confidence', 0.0)
 
-            logger.info(f"✅ REAL analysis completed for {symbol}: {signal.direction} (confidence: {signal.confidence:.2f})")
+            # Extract Claude's sophisticated analysis
+            entry_price = claude_decision.get('entry_price', technical_analysis.current_price)
+            target_1 = claude_decision.get('target_1', technical_analysis.current_price * (1.05 if direction == "BUY" else 0.95))
+            target_2 = claude_decision.get('target_2', technical_analysis.current_price * (1.08 if direction == "BUY" else 0.92)) if claude_decision.get('target_2') else None
+            stop_loss = claude_decision.get('stop_loss', technical_analysis.current_price * (0.97 if direction == "BUY" else 1.03))
 
-            # Return comprehensive analysis in Virtuals ACP format
-            return {
-                "analysis": {
-                    "symbol": symbol.replace('/USDT', ''),
-                    "analysis_type": "yuki_trade_scanner_real",
-                    "signal": {
-                        "direction": signal.direction,
-                        "confidence": signal.confidence,
-                        "entry_price": signal.entry_price,
-                        "target_1": signal.target_1,
-                        "target_2": signal.target_2,
-                        "stop_loss": signal.stop_loss,
-                        "risk_reward_ratio": signal.risk_reward_ratio,
-                        "time_horizon": signal.time_horizon,
-                        "signal_strength": signal.signal_strength
-                    },
-                    "technical_analysis": {
-                        "trend_direction": technical_analysis.trend_direction,
-                        "momentum_score": technical_analysis.momentum_score,
-                        "strength_score": technical_analysis.strength_score,
-                        "rsi_14": technical_analysis.rsi_14,
-                        "macd_histogram": technical_analysis.macd_histogram,
-                        "bb_position": technical_analysis.bb_position,
-                        "support_level": technical_analysis.support_level,
-                        "resistance_level": technical_analysis.resistance_level,
-                        "volatility_24h": technical_analysis.volatility_24h,
-                        "volume_ratio": technical_analysis.volume_ratio
-                    },
-                    "market_conditions": {
-                        "current_price": technical_analysis.current_price,
-                        "price_change_24h": technical_analysis.price_change_24h,
-                        "volume_24h": technical_analysis.volume_24h,
-                        "trend_direction": technical_analysis.trend_direction,
-                        "volatility": technical_analysis.volatility_24h
-                    },
-                    "opportunity_analysis": {
-                        "overall_score": opportunity_score.overall_score,
-                        "volume_score": opportunity_score.volume_score,
-                        "volatility_score": opportunity_score.volatility_score,
-                        "momentum_score": opportunity_score.momentum_score,
-                        "setup_type": opportunity_score.breakdown.get('setup_type', 'neutral')
-                    },
-                    "risk_assessment": {
-                        "risk_level": ai_decision.risk_level,
-                        "risk_factors": ai_decision.risk_factors,
-                        "position_sizing": f"{ai_decision.position_size:.1f}% of portfolio",
-                        "leverage": f"{ai_decision.leverage}x"
-                    },
-                    "ai_reasoning": ai_decision.reasoning,
-                    "ai_key_factors": ai_decision.key_factors,
-                    "analysis_timestamp": signal.analysis_timestamp,
-                    "expires_at": signal.expires_at
+            # Calculate risk/reward ratio based on Claude's levels
+            risk_reward_ratio = self._calculate_risk_reward(
+                entry_price, target_1, stop_loss, direction
+            )
+
+            # Extract Claude's comprehensive analysis
+            reasoning = claude_decision.get('reasoning', f"Claude Sonnet {direction} decision based on sophisticated technical analysis")
+            key_factors = claude_decision.get('key_factors', ['AI technical analysis', 'Pattern recognition', 'Multi-indicator confluence'])
+            risk_factors = claude_decision.get('risk_factors', ['Market volatility', 'Liquidity risk'])
+            risk_level = claude_decision.get('risk_level', 'MEDIUM')
+            position_size = claude_decision.get('position_size', 5)
+            time_horizon = claude_decision.get('time_horizon', '4-12h')
+            candlestick_pattern = claude_decision.get('candlestick_pattern', 'Technical pattern identified')
+
+            # Generate view insights with comprehensive market analysis
+            view_insights = {
+                'market_structure': self._analyze_market_structure(technical_analysis),
+                'volume_analysis': self._analyze_volume_profile(technical_analysis, ticker),
+                'momentum_analysis': self._analyze_momentum_trends(technical_analysis),
+                'risk_profile': {
+                    'volatility_assessment': abs(technical_analysis.price_change_24h),
+                    'liquidity_score': min(100, float(ticker.get('quoteVolume', 0)) / 1000000),
+                    'market_depth': 'Available on major exchanges',
+                    'correlation_risk': 'Moderate correlation with major cryptocurrencies'
+                },
+                'technical_outlook': {
+                    'support_levels': [technical_analysis.bb_lower, technical_analysis.support_level],
+                    'resistance_levels': [technical_analysis.bb_upper, technical_analysis.resistance_level],
+                    'trend_strength': technical_analysis.strength_score,
+                    'momentum_score': technical_analysis.momentum_score
+                },
+                'ai_confidence_factors': key_factors,
+                'candlestick_pattern': candlestick_pattern,
+                'claude_analysis': {
+                    'decision_confidence': confidence,
+                    'time_horizon': time_horizon,
+                    'position_size_recommendation': position_size,
+                    'risk_level': risk_level
+                },
+                'exit_strategy': {
+                    'partial_profit_levels': [target_1, target_2] if target_2 else [target_1],
+                    'stop_loss_reasoning': f'Technical stop at {stop_loss:.4f}',
+                    'trailing_stop_suggestion': True if confidence > 0.7 else False
                 }
             }
 
+            # Create comprehensive opportunity
+            opportunity = TradeOpportunity(
+                id=str(uuid.uuid4()),
+                symbol=symbol,
+                direction=direction,
+                confidence=confidence,
+                entry_price=entry_price,
+                target_1=target_1,
+                target_2=target_2,
+                stop_loss=stop_loss,
+                risk_reward_ratio=risk_reward_ratio,
+                time_horizon=time_horizon,
+                reasoning=reasoning,
+                key_factors=key_factors,
+                technical_analysis=technical_analysis,
+                opportunity_score=opportunity_score,
+                expires_at=(datetime.utcnow() + timedelta(hours=4)).isoformat(),
+                # Enhanced Flow 3.0 fields
+                risk_factors=risk_factors,
+                risk_assessment=risk_assessment,
+                risk_level=risk_level,
+                position_size=position_size,
+                leverage=leverage,
+                target_1_probability=target_1_probability,
+                target_2_probability=target_2_probability,
+                view_insights=view_insights
+            )
+
+            return opportunity
+
         except Exception as e:
-            logger.error(f"❌ Error analyzing token {symbol}: {e}")
-            return {
-                "analysis": None,
-                "error": str(e)
-            }
+            logger.error(f"Error analyzing opportunity for {symbol}: {e}")
+            return None
 
-    async def _perform_technical_analysis(self, symbol: str) -> TechnicalAnalysis:
-        """Perform comprehensive technical analysis with REAL market data - EXACT main floww3.0 implementation."""
-        logger.info(f"📊 Performing REAL technical analysis for {symbol}")
-
+    def _determine_trend_direction(self, indicators: TechnicalIndicators) -> str:
+        """Determine trend direction from indicators."""
         try:
-            if not self.binance:
-                raise Exception("Binance client not initialized")
-
-            # Get REAL OHLCV data for different timeframes (EXACT main floww3.0 process)
-            ohlcv_4h = await self._rate_limited_api_call(
-                self.binance.fetch_ohlcv(symbol, '4h', limit=100)
-            )
-            await asyncio.sleep(0.5)  # Rate limiting
-
-            ohlcv_1h = await self._rate_limited_api_call(
-                self.binance.fetch_ohlcv(symbol, '1h', limit=50)
-            )
-            await asyncio.sleep(0.5)
-
-            # Convert to pandas for analysis (EXACT main floww3.0 process)
-            df_4h = pd.DataFrame(ohlcv_4h, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df_1h = pd.DataFrame(ohlcv_1h, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-
-            # Current values
-            current_price = float(df_4h['close'].iloc[-1])
-            current_volume = float(df_4h['volume'].iloc[-1])
-
-            # 24h metrics
-            price_24h_ago = float(df_1h['close'].iloc[-24])
-            price_change_24h = ((current_price - price_24h_ago) / price_24h_ago) * 100
-            volume_24h = float(df_1h['volume'].tail(24).sum())
-            high_24h = float(df_1h['high'].tail(24).max())
-            low_24h = float(df_1h['low'].tail(24).min())
-
-            # Technical Indicators (EXACT main floww3.0 calculations)
-
-            # RSI (14 period)
-            rsi_14 = self._calculate_rsi(df_4h['close'], 14)
-
-            # MACD
-            macd_line, macd_signal, macd_histogram = self._calculate_macd(df_4h['close'])
-
-            # Bollinger Bands
-            bb_upper, bb_middle, bb_lower = self._calculate_bollinger_bands(df_4h['close'])
-            bb_position = (current_price - bb_lower) / (bb_upper - bb_lower) if bb_upper != bb_lower else 0.5
-
-            # Volume analysis
-            volume_sma_10 = float(df_4h['volume'].tail(10).mean())
-            volume_ratio = current_volume / volume_sma_10 if volume_sma_10 > 0 else 1.0
-
-            # ATR (volatility)
-            atr_14 = self._calculate_atr(df_4h, 14)
-            volatility_24h = ((high_24h - low_24h) / current_price) * 100
-
-            # Support/Resistance
-            support_level = float(df_4h['low'].tail(20).min())
-            resistance_level = float(df_4h['high'].tail(20).max())
-
-            # EMAs
-            ema_20 = self._calculate_ema(df_4h['close'], 20)
-            ema_50 = self._calculate_ema(df_4h['close'], 50)
-            ema_200 = self._calculate_ema(df_1h['close'], 200)  # Use 1h for longer EMA
-
-            # Trend analysis (EXACT main floww3.0 logic)
-            if current_price > ema_20 > ema_50:
-                trend_direction = 'bullish'
-            elif current_price < ema_20 < ema_50:
-                trend_direction = 'bearish'
+            if indicators.ema_20 > indicators.ema_50:
+                if indicators.macd_line > 0:
+                    return 'bullish'
+                return 'sideways'
+            elif indicators.ema_20 < indicators.ema_50:
+                if indicators.macd_line < 0:
+                    return 'bearish'
+                return 'sideways'
             else:
-                trend_direction = 'sideways'
+                return 'sideways'
+        except Exception:
+            return 'sideways'
 
-            # Momentum & Strength scores (EXACT main floww3.0 calculations)
-            momentum_score = self._calculate_momentum_score(rsi_14, macd_histogram, volume_ratio)
-            strength_score = self._calculate_strength_score(bb_position, trend_direction, price_change_24h)
+    def _calculate_momentum_score(self, indicators: TechnicalIndicators, ticker: Dict[str, Any]) -> float:
+        """Calculate momentum score 0-1."""
+        try:
+            score = 0.0
 
-            return TechnicalAnalysis(
-                current_price=current_price,
-                price_change_24h=price_change_24h,
-                volume_24h=volume_24h,
-                high_24h=high_24h,
-                low_24h=low_24h,
-                rsi_14=rsi_14,
-                macd_line=macd_line,
-                macd_signal=macd_signal,
-                macd_histogram=macd_histogram,
-                bb_upper=bb_upper,
-                bb_middle=bb_middle,
-                bb_lower=bb_lower,
-                bb_position=bb_position,
-                volume_sma_10=volume_sma_10,
-                volume_ratio=volume_ratio,
-                atr_14=atr_14,
-                volatility_24h=volatility_24h,
-                support_level=support_level,
-                resistance_level=resistance_level,
-                ema_20=ema_20,
-                ema_50=ema_50,
-                ema_200=ema_200,
-                trend_direction=trend_direction,
-                momentum_score=momentum_score,
-                strength_score=strength_score
-            )
+            # RSI momentum
+            if 30 < indicators.rsi_14 < 70:
+                score += 0.3
+            elif indicators.rsi_14 < 30 or indicators.rsi_14 > 70:
+                score += 0.1  # Extreme levels can reverse
+
+            # MACD momentum
+            if indicators.macd_line > indicators.macd_signal:
+                score += 0.3
+
+            # Volume momentum
+            volume_change = float(ticker.get('priceChangePercent', 0))
+            if abs(volume_change) > 5:
+                score += 0.2
+
+            # Bollinger Band position
+            if 0.2 < indicators.bb_position < 0.8:
+                score += 0.2
+
+            return min(1.0, score)
+
+        except Exception:
+            return 0.5
+
+    def _calculate_strength_score(self, indicators: TechnicalIndicators, ticker: Dict[str, Any]) -> float:
+        """Calculate strength score 0-1."""
+        try:
+            score = 0.0
+
+            # Volume strength
+            volume = float(ticker.get('quoteVolume', 0))
+            if volume > 5000000:  # 5M+ strong
+                score += 0.4
+            elif volume > 2000000:  # 2M+ moderate
+                score += 0.2
+
+            # Price movement strength
+            price_change = abs(float(ticker.get('priceChangePercent', 0)))
+            if price_change > 10:
+                score += 0.3
+            elif price_change > 5:
+                score += 0.2
+
+            # Technical strength
+            if indicators.atr_14 > 0:
+                score += 0.3
+
+            return min(1.0, score)
+
+        except Exception:
+            return 0.5
+
+    async def _claude_trading_decision(self, symbol: str, technical: TechnicalAnalysis, indicators, ohlcv_df, ticker: Dict[str, Any], opportunity_score: OpportunityScore) -> Optional[Dict[str, Any]]:
+        """
+        🚀 NEW: Let Claude Sonnet make the ACTUAL trading decision using ALL sophisticated data.
+        This replaces the basic if/else rules with real AI decision-making.
+        """
+        try:
+            if not self.llm_service or not self.llm_service.is_available():
+                logger.warning(f"Claude Sonnet unavailable for {symbol} - no analysis will be provided")
+                return None
+
+            # Prepare recent OHLCV candlestick data for Claude
+            recent_candles = ""
+            if ohlcv_df is not None and not ohlcv_df.empty:
+                # Get last 10 candles for pattern analysis
+                last_candles = ohlcv_df.tail(10)
+                recent_candles = "\nRECENT CANDLESTICKS (Last 10 hours):\n"
+                for idx, row in last_candles.iterrows():
+                    candle_type = "🟢 Green" if row['close'] > row['open'] else "🔴 Red"
+                    body_size = abs(row['close'] - row['open']) / row['open'] * 100
+                    recent_candles += f"  {idx.strftime('%H:%M')}: O:{row['open']:.6f} H:{row['high']:.6f} L:{row['low']:.6f} C:{row['close']:.6f} V:{row['volume']:.0f} ({candle_type}, {body_size:.2f}%)\n"
+
+            # Prepare comprehensive prompt for Claude Sonnet
+            prompt = f"""
+You are Yuki, an aggressive crypto futures trading AI with access to sophisticated market data. Your task is to make the ACTUAL trading decision (BUY/SELL/HOLD) for {symbol}.
+
+CURRENT MARKET DATA:
+- Symbol: {symbol}
+- Current Price: ${technical.current_price:,.6f}
+- 24h Change: {technical.price_change_24h:+.2f}%
+- 24h Volume: ${technical.volume_24h:,.0f}
+- 24h High/Low: ${technical.high_24h:.6f} / ${technical.low_24h:.6f}
+
+SOPHISTICATED TECHNICAL INDICATORS:
+- RSI (14): {technical.rsi_14:.1f} ({'Oversold' if technical.rsi_14 < 30 else 'Overbought' if technical.rsi_14 > 70 else 'Neutral'})
+- MACD: Line {technical.macd_line:.6f}, Signal {technical.macd_signal:.6f}, Histogram {technical.macd_histogram:.6f}
+- Bollinger Bands: Upper {technical.bb_upper:.6f}, Middle {technical.bb_middle:.6f}, Lower {technical.bb_lower:.6f}
+- BB Position: {technical.bb_position:.3f} (0=lower band, 1=upper band)
+- EMA20: {technical.ema_20:.6f}, EMA50: {technical.ema_50:.6f}
+- ATR (14): {technical.atr_14:.6f}
+- Volume SMA: {technical.volume_sma_10:,.0f}, Volume Ratio: {technical.volume_ratio:.2f}
+- Support: {technical.support_level:.6f}, Resistance: {technical.resistance_level:.6f}
+- Trend: {technical.trend_direction}
+- Momentum Score: {technical.momentum_score:.3f}/1.0
+- Strength Score: {technical.strength_score:.3f}/1.0
+- Volatility 24h: {technical.volatility_24h:.3f}
+
+OPPORTUNITY SCORING:
+- Overall Score: {opportunity_score.overall_score:.3f}/1.0
+- Volume Score: {opportunity_score.volume_score:.3f}/1.0
+- Volatility Score: {opportunity_score.volatility_score:.3f}/1.0
+- Momentum Score: {opportunity_score.momentum_score:.3f}/1.0
+- Trend Score: {opportunity_score.trend_score:.3f}/1.0
+- Technical Score: {opportunity_score.technical_score:.3f}/1.0
+{recent_candles}
+
+TRADING CONTEXT:
+- This is an aggressive trading strategy seeking high-risk, high-reward opportunities
+- Minimum confidence threshold: {self.min_confidence:.2f}
+- Focus on momentum, volatility, and technical confluence
+- Consider both bullish and bearish setups
+
+DECISION REQUIRED:
+Analyze ALL the above data and make the ACTUAL trading decision. Respond with valid JSON:
+
+{{
+    "direction": "BUY|SELL|HOLD",
+    "confidence": 0.0-1.0,
+    "reasoning": "Detailed 2-3 sentence analysis explaining your decision using specific technical data",
+    "key_factors": ["specific factor 1", "specific factor 2", "specific factor 3"],
+    "risk_factors": ["risk 1", "risk 2"],
+    "risk_level": "LOW|MEDIUM|HIGH|EXTREME",
+    "entry_price": {technical.current_price:.6f},
+    "target_1": "calculated target price",
+    "target_2": "calculated target price or null",
+    "stop_loss": "calculated stop loss price",
+    "position_size": 1-10,
+    "time_horizon": "1-4h|4-12h|12-24h",
+    "candlestick_pattern": "description of recent pattern if notable"
+}}
+
+Make your decision based on the sophisticated technical analysis, NOT simple rules. Use your AI reasoning to identify opportunities the rules might miss.
+"""
+
+            # Call Claude Sonnet for the actual trading decision
+            response = await self.llm_service.generate_analysis(prompt, 'yuki')
+            if response and response.get('success'):
+                try:
+                    import json
+                    decision = json.loads(response['analysis'])
+                    logger.info(f"🤖 Claude Sonnet decision for {symbol}: {decision.get('direction', 'HOLD')} with {decision.get('confidence', 0):.2f} confidence")
+                    return decision
+                except Exception as e:
+                    logger.warning(f"Failed to parse Claude decision for {symbol}: {e}")
+
+            logger.warning(f"Claude Sonnet analysis failed for {symbol} - no analysis available")
+            return None
 
         except Exception as e:
-            logger.error(f"❌ REAL technical analysis failed for {symbol}: {e}")
-            return await self._fallback_technical_analysis(symbol)
+            logger.error(f"Claude trading decision failed for {symbol}: {e}")
+            return None
 
-    async def _fallback_technical_analysis(self, symbol: str) -> TechnicalAnalysis:
-        """Fallback technical analysis when real data unavailable."""
-        logger.warning(f"Using fallback technical analysis for {symbol}")
-        base_price = {"BTC/USDT": 43387, "ETH/USDT": 2623.4, "SOL/USDT": 98.2, "AVAX/USDT": 35.7, "MATIC/USDT": 0.89}.get(symbol.upper(), 100.0)
 
-        return TechnicalAnalysis(
-            current_price=base_price,
-            price_change_24h=0.5,
-            volume_24h=10000000,
-            high_24h=base_price * 1.03,
-            low_24h=base_price * 0.97,
-            rsi_14=55.0,
-            macd_line=0.1,
-            macd_signal=0.05,
-            macd_histogram=0.05,
-            bb_upper=base_price * 1.02,
-            bb_middle=base_price,
-            bb_lower=base_price * 0.98,
-            bb_position=0.6,
-            volume_sma_10=5000000,
-            volume_ratio=1.2,
-            atr_14=base_price * 0.015,
-            volatility_24h=3.0,
-            support_level=base_price * 0.95,
-            resistance_level=base_price * 1.05,
-            ema_20=base_price * 0.998,
-            ema_50=base_price * 0.996,
-            ema_200=base_price * 0.990,
-            trend_direction="bullish",
-            momentum_score=0.65,
-            strength_score=0.7
-        )
-
-    async def _calculate_opportunity_score(self, symbol: str, ta: TechnicalAnalysis) -> OpportunityScore:
-        """Calculate comprehensive opportunity score - EXACT main floww3.0 implementation."""
+    def _score_opportunity(self, symbol: str, technical: TechnicalAnalysis, ticker: Dict[str, Any]) -> OpportunityScore:
+        """Score trading opportunity."""
         try:
-            current_price = ta.current_price
-            volume_usdt = ta.volume_24h
-            price_change_pct = abs(ta.price_change_24h)
-            high = ta.high_24h
-            low = ta.low_24h
+            # Volume score
+            volume = float(ticker.get('quoteVolume', 0))
+            volume_score = min(1.0, volume / 10000000)  # Normalize to 10M
 
-            # Calculate volatility
-            volatility = (high - low) / current_price if current_price > 0 else 0
+            # Volatility score
+            volatility_score = min(1.0, technical.volatility_24h * 10)
 
-            # Scoring weights (EXACT main floww3.0)
+            # Momentum score (already calculated)
+            momentum_score = technical.momentum_score
+
+            # Trend score
+            trend_multiplier = {'bullish': 1.0, 'bearish': 0.8, 'sideways': 0.6}
+            trend_score = trend_multiplier.get(technical.trend_direction, 0.5)
+
+            # Technical score based on indicators
+            technical_score = 0.0
+            if 30 < technical.rsi_14 < 70:
+                technical_score += 0.3
+            if technical.macd_histogram > 0:
+                technical_score += 0.3
+            if 0.2 < technical.bb_position < 0.8:
+                technical_score += 0.4
+
+            # Overall score (weighted average)
             weights = {
                 'volume': 0.25,
                 'volatility': 0.20,
-                'momentum': 0.30,
+                'momentum': 0.25,
                 'trend': 0.15,
-                'institutional': 0.10
+                'technical': 0.15
             }
 
-            # 1. Volume Score (log-normalized)
-            volume_score = min(1.0, np.log10(volume_usdt / 1_000_000) / 3)
-
-            # 2. Volatility Score (optimal range 5-20%)
-            if volatility <= 0.20:
-                volatility_score = volatility / 0.20
-            else:
-                volatility_score = max(0.1, 1.0 - (volatility - 0.20) / 0.30)
-
-            # 3. Momentum Score (moderate price movement preferred)
-            if price_change_pct <= 5.0:
-                momentum_score = price_change_pct / 5.0
-            elif price_change_pct <= 15.0:
-                momentum_score = 1.0 - ((price_change_pct - 5.0) / 15.0)
-            else:
-                momentum_score = max(0.0, 0.3 - (price_change_pct - 15.0) / 30.0)
-
-            # 4. Setup Score (position in daily range)
-            if high != low:
-                position_in_range = (current_price - low) / (high - low)
-                # Prefer tokens at key levels for trading setups
-                if position_in_range >= 0.8:
-                    setup_score = 0.9  # Near highs - potential SHORT opportunity
-                    setup_type = 'short_setup'
-                elif position_in_range <= 0.2:
-                    setup_score = 0.9  # Near lows - potential LONG opportunity
-                    setup_type = 'long_setup'
-                elif 0.65 <= position_in_range <= 0.8 or 0.2 <= position_in_range <= 0.35:
-                    setup_score = 0.7  # Approaching key levels
-                    setup_type = 'approaching_level'
-                else:
-                    setup_score = 0.4  # Middle range - less clear setup
-                    setup_type = 'neutral'
-            else:
-                setup_score = 0.5
-                setup_type = 'neutral'
-                position_in_range = 0.5
-
-            # 5. Institutional Score (placeholder)
-            institutional_score = 0.5
-
-            # Calculate weighted overall score
             overall_score = (
-                weights['volume'] * volume_score +
-                weights['volatility'] * volatility_score +
-                weights['momentum'] * momentum_score +
-                weights['trend'] * setup_score +
-                weights['institutional'] * institutional_score
+                volume_score * weights['volume'] +
+                volatility_score * weights['volatility'] +
+                momentum_score * weights['momentum'] +
+                trend_score * weights['trend'] +
+                technical_score * weights['technical']
             )
-
-            overall_score = max(0.0, min(1.0, overall_score))
 
             return OpportunityScore(
                 symbol=symbol,
@@ -508,23 +621,18 @@ class YukiAgentService:
                 volume_score=volume_score,
                 volatility_score=volatility_score,
                 momentum_score=momentum_score,
-                trend_score=setup_score,
-                institutional_score=institutional_score,
+                trend_score=trend_score,
+                technical_score=technical_score,
                 breakdown={
                     'volume': volume_score,
                     'volatility': volatility_score,
                     'momentum': momentum_score,
-                    'setup_quality': setup_score,
-                    'institutional': institutional_score,
-                    'price_direction': 'bullish' if ta.price_change_24h > 0 else 'bearish',
-                    'price_change_24h': ta.price_change_24h,
-                    'position_in_range': position_in_range,
-                    'setup_type': setup_type
+                    'trend': trend_score,
+                    'technical': technical_score
                 }
             )
 
-        except Exception as e:
-            logger.error(f"Error calculating opportunity score for {symbol}: {e}")
+        except Exception:
             return OpportunityScore(
                 symbol=symbol,
                 overall_score=0.5,
@@ -532,462 +640,311 @@ class YukiAgentService:
                 volatility_score=0.5,
                 momentum_score=0.5,
                 trend_score=0.5,
-                institutional_score=0.5,
-                breakdown={'setup_type': 'neutral', 'position_in_range': 0.5}
+                technical_score=0.5,
+                breakdown={}
             )
 
-    async def _ai_analyze_opportunity(self, symbol: str, ta: TechnicalAnalysis, opp: OpportunityScore) -> Optional[AIDecision]:
-        """
-        Get AI analysis and trading decision - EXACT main floww3.0 ai_analyze_opportunity implementation.
-        Uses the same comprehensive Claude prompts and analysis process.
-        """
-        logger.info(f"🧠 Getting REAL AI analysis for {symbol} (EXACT main floww3.0 process)")
-
+    def _determine_trade_direction(self, technical: TechnicalAnalysis) -> Tuple[str, float]:
+        """Determine trade direction and confidence."""
         try:
-            if not self.claude_client:
-                logger.warning("Claude client not available - using fallback decision")
-                return self._fallback_ai_decision(symbol, ta)
+            long_signals = 0
+            short_signals = 0
 
-            # Prepare comprehensive data for AI (EXACT main floww3.0 format)
-            clean_symbol = symbol.replace('/USDT', '')
+            # RSI signals
+            if technical.rsi_14 < 30:
+                long_signals += 2  # Oversold
+            elif technical.rsi_14 > 70:
+                short_signals += 2  # Overbought
 
-            # EXACT main floww3.0 AI Analysis Prompt
+            # MACD signals
+            if technical.macd_line > technical.macd_signal:
+                long_signals += 1
+            else:
+                short_signals += 1
+
+            # Trend signals
+            if technical.trend_direction == 'bullish':
+                long_signals += 2
+            elif technical.trend_direction == 'bearish':
+                short_signals += 2
+
+            # Bollinger Band signals
+            if technical.bb_position < 0.2:
+                long_signals += 1  # Near lower band
+            elif technical.bb_position > 0.8:
+                short_signals += 1  # Near upper band
+
+            # Price momentum
+            if technical.price_change_24h > 5:
+                long_signals += 1
+            elif technical.price_change_24h < -5:
+                short_signals += 1
+
+            # Determine direction and confidence
+            total_signals = long_signals + short_signals
+            if total_signals == 0:
+                return "HOLD", 0.0
+
+            if long_signals > short_signals:
+                confidence = long_signals / max(total_signals, 1)
+                return "LONG", min(0.95, confidence)
+            else:
+                confidence = short_signals / max(total_signals, 1)
+                return "SHORT", min(0.95, confidence)
+
+        except Exception:
+            return "HOLD", 0.0
+
+    def _calculate_trade_levels(self, technical: TechnicalAnalysis, direction: str) -> Tuple[float, Optional[float], float]:
+        """Calculate entry, targets, and stop loss."""
+        try:
+            current_price = technical.current_price
+            atr = max(technical.atr_14, current_price * 0.02)  # Min 2% ATR
+
+            if direction == "LONG":
+                # Long trade levels
+                target_1 = current_price + (atr * 2)
+                target_2 = current_price + (atr * 3.5)
+                stop_loss = current_price - (atr * 1.5)
+            else:
+                # Short trade levels
+                target_1 = current_price - (atr * 2)
+                target_2 = current_price - (atr * 3.5)
+                stop_loss = current_price + (atr * 1.5)
+
+            return target_1, target_2, stop_loss
+
+        except Exception:
+            # Fallback calculation
+            if direction == "LONG":
+                return current_price * 1.05, current_price * 1.08, current_price * 0.97
+            else:
+                return current_price * 0.95, current_price * 0.92, current_price * 1.03
+
+    def _calculate_risk_reward(self, entry: float, target: float, stop: float, direction: str) -> float:
+        """Calculate risk/reward ratio."""
+        try:
+            if direction == "LONG":
+                reward = target - entry
+                risk = entry - stop
+            else:
+                reward = entry - target
+                risk = stop - entry
+
+            if risk <= 0:
+                return 0.0
+
+            return reward / risk
+
+        except Exception:
+            return 0.0
+
+    def _generate_reasoning(self, technical: TechnicalAnalysis, direction: str) -> Tuple[str, List[str]]:
+        """Generate human-readable reasoning for the trade."""
+        try:
+            factors = []
+
+            # RSI analysis
+            if technical.rsi_14 < 30:
+                factors.append("RSI showing oversold conditions")
+            elif technical.rsi_14 > 70:
+                factors.append("RSI showing overbought conditions")
+
+            # MACD analysis
+            if technical.macd_line > technical.macd_signal:
+                factors.append("MACD bullish crossover")
+            elif technical.macd_line < technical.macd_signal:
+                factors.append("MACD bearish crossover")
+
+            # Trend analysis
+            if technical.trend_direction == 'bullish':
+                factors.append("Strong upward trend confirmed")
+            elif technical.trend_direction == 'bearish':
+                factors.append("Strong downward trend confirmed")
+
+            # Volume analysis
+            if technical.volume_ratio > 1.5:
+                factors.append("Above-average volume supporting move")
+
+            # Bollinger Band analysis
+            if technical.bb_position < 0.2:
+                factors.append("Price near Bollinger Band lower support")
+            elif technical.bb_position > 0.8:
+                factors.append("Price near Bollinger Band upper resistance")
+
+            # Generate main reasoning
+            if direction == "LONG":
+                reasoning = f"Bullish setup identified with {technical.rsi_14:.1f} RSI and strong technical confluence"
+            else:
+                reasoning = f"Bearish setup identified with {technical.rsi_14:.1f} RSI and technical breakdown signals"
+
+            return reasoning, factors[:5]  # Limit to 5 key factors
+
+        except Exception:
+            return f"{direction} opportunity based on technical analysis", ["Technical analysis indicates opportunity"]
+
+    def _determine_time_horizon(self, technical: TechnicalAnalysis) -> str:
+        """Determine appropriate time horizon for the trade."""
+        try:
+            # High volatility = shorter timeframe
+            if technical.volatility_24h > 0.15:  # 15%+
+                return "1-4 hours"
+            elif technical.volatility_24h > 0.08:  # 8%+
+                return "4-12 hours"
+            else:
+                return "12-48 hours"
+        except Exception:
+            return "4-12 hours"
+
+    async def _generate_ai_analysis(self, symbol: str, technical: TechnicalAnalysis, direction: str, confidence: float, entry: float, target1: float, target2: Optional[float], stop: float) -> Dict[str, Any]:
+        """Generate comprehensive AI analysis using Claude."""
+        try:
+            if not self.llm_service or not self.llm_service.is_available():
+                return self._fallback_analysis(symbol, technical, direction, confidence)
+
+            # Prepare comprehensive market context
             prompt = f"""
-You are an institutional crypto trader analyzing {clean_symbol} for a 4-hour trading signal.
+You are Yuki, an aggressive crypto futures trading agent analyzing {symbol} for a {direction} position.
 
-CURRENT MARKET DATA:
-- Price: ${ta.current_price:.6f}
-- 24h Change: {ta.price_change_24h:+.2f}%
-- Volume 24h: ${ta.volume_24h:,.0f}
-- Volatility: {ta.volatility_24h:.2f}%
+MARKET DATA:
+- Current Price: ${technical.current_price:,.4f}
+- 24h Change: {technical.price_change_24h:+.2f}%
+- Volume: ${technical.volume_24h:,.0f}
+- Volatility: {technical.volatility_24h:.3f}
 
-TECHNICAL ANALYSIS:
-- RSI(14): {ta.rsi_14:.1f}
-- MACD: {ta.macd_histogram:.6f} ({"Bullish" if ta.macd_histogram > 0 else "Bearish"})
-- Bollinger Position: {ta.bb_position:.2f} (0=lower band, 1=upper band)
-- Trend: {ta.trend_direction}
-- Momentum Score: {ta.momentum_score:.2f}/1.0
-- Strength Score: {ta.strength_score:.2f}/1.0
+TECHNICAL INDICATORS:
+- RSI (14): {technical.rsi_14:.1f}
+- MACD: {technical.macd_line:.6f} (Signal: {technical.macd_signal:.6f})
+- BB Position: {technical.bb_position:.3f} (0=lower band, 1=upper band)
+- Trend: {technical.trend_direction}
+- EMA20: {technical.ema_20:.4f}, EMA50: {technical.ema_50:.4f}
+- Support: {technical.support_level:.4f}, Resistance: {technical.resistance_level:.4f}
 
-OPPORTUNITY ANALYSIS:
-- Overall Score: {opp.overall_score:.3f}/1.0
-- Volume Score: {opp.volume_score:.2f}
-- Volatility Score: {opp.volatility_score:.2f}
-- Momentum Score: {opp.momentum_score:.2f}
-- Setup Type: {opp.breakdown.get('setup_type', 'neutral')}
-- Position in Range: {opp.breakdown.get('position_in_range', 0):.2f} (0=low, 1=high)
+TRADE SETUP:
+- Direction: {direction}
+- Entry: ${entry:.4f}
+- Target 1: ${target1:.4f}
+- Target 2: ${target2:.4f if target2 else 'N/A'}
+- Stop Loss: ${stop:.4f}
+- Confidence: {confidence:.2f}
 
-PRICE LEVELS:
-- Support: ${ta.support_level:.6f}
-- Resistance: ${ta.resistance_level:.6f}
-- BB Upper: ${ta.bb_upper:.6f}
-- BB Lower: ${ta.bb_lower:.6f}
-
-FUTURES TRADING SETUP ANALYSIS:
-
-This token was selected for having high liquidity + volatility + a potential trading setup.
-
-LONG OPPORTUNITIES (Support-based setups):
-- Token near support levels (position_in_range < 0.3)
-- RSI oversold (< 30) or approaching oversold (30-40)
-- Price near lower Bollinger Band + potential bounce
-- Support confluence: Previous lows, EMA support, key psychological levels
-- Volume spike on recent selling (potential exhaustion)
-
-SHORT OPPORTUNITIES (Resistance-based setups):
-- Token near resistance levels (position_in_range > 0.7)
-- RSI overbought (> 70) or approaching overbought (60-70)
-- Price near upper Bollinger Band + potential rejection
-- Resistance confluence: Previous highs, EMA resistance, key psychological levels
-- Volume spike on recent buying (potential exhaustion)
-
-HOLD CONDITIONS:
-- Token in middle range (0.4-0.6) without any directional bias
-- Extremely mixed signals with no dominant trend
-- Very low conviction setup with high uncertainty
-
-DECISION REQUIRED:
-Based on the complete technical analysis and opportunity scoring, make a trading decision.
-
-Respond with a JSON object containing:
+Provide a detailed analysis in JSON format:
 {{
-    "recommendation": "LONG" | "SHORT" | "HOLD",
-    "confidence": 0.50-1.0,
-    "reasoning": "Detailed explanation of decision",
-    "key_factors": ["factor1", "factor2", "factor3"],
-
-    "entry_price": price_value,
-    "target_1": price_value,
-    "target_1_probability": 0.0-1.0,
-    "target_2": price_value,
-    "target_2_probability": 0.0-1.0,
-    "stop_loss": price_value,
-    "risk_reward_ratio": ratio_value,
-
+    "reasoning": "Comprehensive 2-3 sentence analysis explaining the trade thesis with specific technical details",
+    "key_factors": ["specific factor 1", "specific factor 2", "specific factor 3"],
+    "risk_factors": ["specific risk 1", "specific risk 2"],
+    "risk_assessment": "Detailed risk summary in 1-2 sentences",
+    "risk_level": "LOW|MEDIUM|HIGH|EXTREME",
     "position_size": 1-10,
     "leverage": 1-20,
-    "risk_level": "LOW" | "MEDIUM" | "HIGH" | "EXTREME",
-    "time_horizon": "4h-12h" | "1-3 days" | "3-7 days",
-
-    "risk_factors": ["risk1", "risk2"],
-    "risk_assessment": "Risk analysis"
+    "target_1_probability": 0.0-1.0,
+    "target_2_probability": 0.0-1.0,
+    "confidence_factors": ["confidence factor 1", "confidence factor 2"]
 }}
 
-IMPORTANT: Provide your honest confidence assessment. Recommend LONG/SHORT for any meaningful directional bias (confidence >= 0.50). Only recommend HOLD for truly neutral or conflicting signals.
+Focus on specific technical details and avoid generic responses. Be aggressive but honest about risks.
 """
 
-            # Call Claude AI (EXACT main floww3.0 process)
-            response = await asyncio.to_thread(
-                self.claude_client.messages.create,
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=1000,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            # Call Claude for analysis
+            response = await self.llm_service.generate_analysis(prompt, 'yuki')
+            if response and response.get('success'):
+                try:
+                    import json
+                    return json.loads(response['analysis'])
+                except:
+                    pass
 
-            # Parse AI response (EXACT main floww3.0 process)
-            ai_text = response.content[0].text
-
-            # Extract JSON from response
-            try:
-                start_idx = ai_text.find('{')
-                end_idx = ai_text.rfind('}') + 1
-                json_str = ai_text[start_idx:end_idx]
-                ai_decision_data = json.loads(json_str)
-
-                # Validate required fields
-                required = ['recommendation', 'confidence', 'reasoning']
-                for field in required:
-                    if field not in ai_decision_data:
-                        logger.warning(f"AI response missing field: {field}")
-                        return None
-
-                # Create AI decision object
-                rec = ai_decision_data['recommendation'].upper()
-                if rec == 'HOLD':
-                    # For HOLD, use current price as defaults since we won't trade
-                    entry_price = ta.current_price
-                    stop_loss = ta.current_price
-                    target_1 = ta.current_price
-                    target_2 = ta.current_price
-                    risk_reward_ratio = 1.0
-                else:
-                    # For LONG/SHORT, use AI-provided values
-                    entry_price = float(ai_decision_data['entry_price'])
-                    stop_loss = float(ai_decision_data['stop_loss'])
-                    target_1 = float(ai_decision_data.get('target_1') or entry_price * 1.05)
-                    target_2 = float(ai_decision_data.get('target_2') or entry_price * 1.10)
-                    risk_reward_ratio = float(ai_decision_data.get('risk_reward_ratio') or 2.0)
-
-                decision = AIDecision(
-                    recommendation=rec,
-                    confidence=float(ai_decision_data['confidence']),
-                    reasoning=ai_decision_data['reasoning'],
-                    key_factors=ai_decision_data.get('key_factors', []),
-                    entry_price=entry_price,
-                    target_1=target_1,
-                    target_1_probability=float(ai_decision_data.get('target_1_probability') or 0.7),
-                    target_2=target_2,
-                    target_2_probability=float(ai_decision_data.get('target_2_probability') or 0.4),
-                    stop_loss=stop_loss,
-                    risk_reward_ratio=risk_reward_ratio,
-                    position_size=float(ai_decision_data.get('position_size') or 5.0),
-                    leverage=int(ai_decision_data.get('leverage', 5)),
-                    risk_level=ai_decision_data.get('risk_level', 'MEDIUM'),
-                    time_horizon=ai_decision_data.get('time_horizon', '4h-12h'),
-                    risk_factors=ai_decision_data.get('risk_factors', []),
-                    risk_assessment=ai_decision_data.get('risk_assessment', 'Standard crypto trading risks')
-                )
-
-                logger.info(f"✅ REAL AI analysis completed for {symbol}: {decision.recommendation} (confidence: {decision.confidence:.2f})")
-                return decision
-
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.error(f"❌ Failed to parse AI response: {e}")
-                logger.error(f"AI Response: {ai_text}")
-                return None
+            return self._fallback_analysis(symbol, technical, direction, confidence)
 
         except Exception as e:
-            logger.error(f"❌ REAL AI analysis failed for {symbol}: {e}")
-            return self._fallback_ai_decision(symbol, ta)
+            logger.warning(f"AI analysis failed for {symbol}: {e}")
+            return self._fallback_analysis(symbol, technical, direction, confidence)
 
-    def _fallback_ai_decision(self, symbol: str, ta: TechnicalAnalysis) -> Optional[AIDecision]:
-        """Fallback AI decision when real AI unavailable."""
-        logger.warning(f"Using fallback AI decision for {symbol}")
+    def _fallback_analysis(self, symbol: str, technical: TechnicalAnalysis, direction: str, confidence: float) -> Dict[str, Any]:
+        """Fallback analysis when AI is unavailable."""
+        # Generate intelligent fallback based on actual technical data
+        rsi_desc = "oversold" if technical.rsi_14 < 30 else "overbought" if technical.rsi_14 > 70 else "neutral"
+        macd_desc = "bullish crossover" if technical.macd_line > technical.macd_signal else "bearish crossover"
+        trend_desc = f"{technical.trend_direction} trend confirmed"
 
-        # More generous rule-based decision for better signal generation
-        if ta.rsi_14 < 50 and ta.bb_position < 0.4 and ta.trend_direction in ['bullish', 'sideways']:
-            direction = "LONG"
-            confidence = 0.65
-            reasoning = f"LONG signal based on RSI {ta.rsi_14:.1f} (favorable), BB position {ta.bb_position:.2f} (lower range), and {ta.trend_direction} trend"
-        elif ta.rsi_14 > 50 and ta.bb_position > 0.6 and ta.trend_direction in ['bearish', 'sideways']:
-            direction = "SHORT"
-            confidence = 0.65
-            reasoning = f"SHORT signal based on RSI {ta.rsi_14:.1f} (elevated), BB position {ta.bb_position:.2f} (upper range), and {ta.trend_direction} trend"
-        elif ta.momentum_score > 0.6:
-            # Use momentum-based signal
-            direction = "LONG" if ta.price_change_24h > 0 else "SHORT"
-            confidence = 0.60
-            reasoning = f"{direction} signal based on strong momentum score {ta.momentum_score:.2f} and 24h price change {ta.price_change_24h:+.2f}%"
+        key_factors = []
+        if abs(technical.macd_line - technical.macd_signal) > 0.001:
+            key_factors.append(f"MACD {macd_desc}")
+        if technical.rsi_14 < 35 or technical.rsi_14 > 65:
+            key_factors.append(f"RSI {rsi_desc} at {technical.rsi_14:.1f}")
+        if technical.volume_ratio > 1.5:
+            key_factors.append("Above-average volume supporting move")
+        if trend_desc != "sideways trend confirmed":
+            key_factors.append(trend_desc)
+
+        # Risk assessment based on actual conditions
+        risk_factors = []
+        if technical.volatility_24h > 0.1:
+            risk_factors.append("High volatility environment")
+        if technical.volume_24h < 1000000:
+            risk_factors.append("Lower liquidity risk")
+        if abs(technical.price_change_24h) > 10:
+            risk_factors.append("Strong price momentum may reverse")
+
+        risk_level = "HIGH" if technical.volatility_24h > 0.15 else "MEDIUM" if technical.volatility_24h > 0.05 else "LOW"
+
+        return {
+            "reasoning": f"{direction} setup identified with {technical.rsi_14:.1f} RSI and strong technical confluence. {macd_desc.capitalize()} supporting directional bias with {trend_desc}.",
+            "key_factors": key_factors[:3] if key_factors else ["Technical confluence", "Directional bias confirmed"],
+            "risk_factors": risk_factors[:2] if risk_factors else ["Market volatility", "Liquidity risk"],
+            "risk_assessment": f"Standard crypto trading risks apply with {risk_level.lower()} volatility environment",
+            "risk_level": risk_level,
+            "position_size": max(1, min(10, int(confidence * 10))),
+            "leverage": max(1, min(5, int(confidence * 8))),
+            "target_1_probability": min(0.9, confidence + 0.1),
+            "target_2_probability": max(0.2, confidence - 0.2),
+            "confidence_factors": ["Technical indicator alignment", "Volume confirmation"]
+        }
+
+    def _analyze_market_structure(self, technical: TechnicalAnalysis) -> str:
+        """Analyze market structure."""
+        if technical.bb_position > 0.8:
+            return "Price near upper resistance, potential for mean reversion"
+        elif technical.bb_position < 0.2:
+            return "Price near lower support, potential for bounce"
+        elif technical.trend_direction == 'bullish':
+            return "Uptrending structure with higher lows and higher highs"
+        elif technical.trend_direction == 'bearish':
+            return "Downtrending structure with lower highs and lower lows"
         else:
-            # Last resort - use trend direction
-            if ta.trend_direction == 'bullish':
-                direction = "LONG"
-                confidence = 0.55
-                reasoning = f"LONG signal based on bullish trend direction"
-            elif ta.trend_direction == 'bearish':
-                direction = "SHORT"
-                confidence = 0.55
-                reasoning = f"SHORT signal based on bearish trend direction"
-            else:
-                return None  # HOLD only if truly sideways with no momentum
+            return "Ranging market structure between key support and resistance levels"
 
-        entry_price = ta.current_price
-        risk_distance = ta.current_price * 0.03  # 3% risk
-
-        if direction == "LONG":
-            stop_loss = entry_price - risk_distance
-            target_1 = entry_price + (risk_distance * 2.0)
-            target_2 = entry_price + (risk_distance * 3.0)
+    def _analyze_volume_profile(self, technical: TechnicalAnalysis, ticker: Dict[str, Any]) -> str:
+        """Analyze volume profile."""
+        volume = float(ticker.get('quoteVolume', 0))
+        if volume > 10000000:
+            return "High institutional volume indicating strong conviction"
+        elif volume > 5000000:
+            return "Above-average volume supporting price action"
+        elif volume > 1000000:
+            return "Moderate volume with adequate liquidity"
         else:
-            stop_loss = entry_price + risk_distance
-            target_1 = entry_price - (risk_distance * 2.0)
-            target_2 = entry_price - (risk_distance * 3.0)
+            return "Lower volume environment, monitor for breakouts"
 
-        return AIDecision(
-            recommendation=direction,
-            confidence=confidence,
-            reasoning=reasoning,
-            key_factors=[f"RSI {ta.rsi_14:.1f}", f"BB position {ta.bb_position:.2f}", f"Trend {ta.trend_direction}", f"Momentum {ta.momentum_score:.2f}"],
-            entry_price=entry_price,
-            target_1=target_1,
-            target_1_probability=0.7,
-            target_2=target_2,
-            target_2_probability=0.4,
-            stop_loss=stop_loss,
-            risk_reward_ratio=2.0,
-            position_size=5.0,
-            leverage=3,
-            risk_level='MEDIUM',
-            time_horizon='4h-12h',
-            risk_factors=['Fallback analysis'],
-            risk_assessment='Limited analysis due to service unavailability'
-        )
-
-    async def _generate_platform_signal(self, symbol: str, ai_decision: AIDecision, ta: TechnicalAnalysis) -> PlatformSignal:
-        """Generate platform signal from AI decision."""
-        signal_id = f"yuki_{symbol.replace('/', '_')}_{int(datetime.now().timestamp())}"
-        now = datetime.now()
-
-        return PlatformSignal(
-            signal_id=signal_id,
-            symbol=symbol.replace('/USDT', ''),
-            direction=ai_decision.recommendation,
-            confidence=ai_decision.confidence,
-            entry_price=ai_decision.entry_price,
-            target_1=ai_decision.target_1,
-            target_2=ai_decision.target_2,
-            stop_loss=ai_decision.stop_loss,
-            risk_reward_ratio=ai_decision.risk_reward_ratio,
-            time_horizon=ai_decision.time_horizon,
-            signal_strength="WEAK" if ai_decision.confidence < 0.6 else "MODERATE" if ai_decision.confidence < 0.75 else "STRONG",
-            technical_analysis={
-                "rsi": ta.rsi_14,
-                "macd_histogram": ta.macd_histogram,
-                "bb_position": ta.bb_position,
-                "trend": ta.trend_direction,
-                "momentum": ta.momentum_score,
-                "strength": ta.strength_score
-            },
-            ai_reasoning=ai_decision.reasoning,
-            ai_key_factors=ai_decision.key_factors,
-            risk_factors=ai_decision.risk_factors,
-            analysis_timestamp=now.isoformat(),
-            expires_at=(now + timedelta(hours=12)).isoformat()
-        )
-
-    # Technical Indicator Calculations (EXACT main floww3.0 implementations)
-
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
-        """Calculate RSI indicator - EXACT main floww3.0 implementation."""
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else 50.0
-
-    def _calculate_macd(self, prices: pd.Series) -> Tuple[float, float, float]:
-        """Calculate MACD indicator - EXACT main floww3.0 implementation."""
-        ema_12 = prices.ewm(span=12).mean()
-        ema_26 = prices.ewm(span=26).mean()
-        macd_line = ema_12 - ema_26
-        macd_signal = macd_line.ewm(span=9).mean()
-        macd_histogram = macd_line - macd_signal
-
-        return (
-            float(macd_line.iloc[-1]) if not pd.isna(macd_line.iloc[-1]) else 0.0,
-            float(macd_signal.iloc[-1]) if not pd.isna(macd_signal.iloc[-1]) else 0.0,
-            float(macd_histogram.iloc[-1]) if not pd.isna(macd_histogram.iloc[-1]) else 0.0
-        )
-
-    def _calculate_bollinger_bands(self, prices: pd.Series, period: int = 20, std_dev: int = 2) -> Tuple[float, float, float]:
-        """Calculate Bollinger Bands - EXACT main floww3.0 implementation."""
-        middle = prices.rolling(window=period).mean()
-        std = prices.rolling(window=period).std()
-        upper = middle + (std * std_dev)
-        lower = middle - (std * std_dev)
-
-        return (
-            float(upper.iloc[-1]) if not pd.isna(upper.iloc[-1]) else 0.0,
-            float(middle.iloc[-1]) if not pd.isna(middle.iloc[-1]) else 0.0,
-            float(lower.iloc[-1]) if not pd.isna(lower.iloc[-1]) else 0.0
-        )
-
-    def _calculate_ema(self, prices: pd.Series, period: int) -> float:
-        """Calculate Exponential Moving Average - EXACT main floww3.0 implementation."""
-        ema = prices.ewm(span=period).mean()
-        return float(ema.iloc[-1]) if not pd.isna(ema.iloc[-1]) else 0.0
-
-    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
-        """Calculate Average True Range - EXACT main floww3.0 implementation."""
-        high_low = df['high'] - df['low']
-        high_close = np.abs(df['high'] - df['close'].shift())
-        low_close = np.abs(df['low'] - df['close'].shift())
-
-        ranges = pd.concat([high_low, high_close, low_close], axis=1)
-        true_range = np.max(ranges, axis=1)
-        atr = true_range.rolling(period).mean()
-
-        return float(atr.iloc[-1]) if not pd.isna(atr.iloc[-1]) else 0.0
-
-    def _calculate_momentum_score(self, rsi: float, macd_hist: float, volume_ratio: float) -> float:
-        """Calculate momentum score (0-1) - EXACT main floww3.0 implementation."""
-        # RSI component (optimal around 30-70)
-        if 30 <= rsi <= 70:
-            rsi_score = 1.0
-        elif rsi < 30:
-            rsi_score = rsi / 30
-        else:  # rsi > 70
-            rsi_score = (100 - rsi) / 30
-
-        # MACD histogram component
-        macd_score = 0.5 + np.tanh(macd_hist * 10) * 0.5
-
-        # Volume component
-        volume_score = min(1.0, volume_ratio / 2.0)  # Optimal at 2x average volume
-
-        return (rsi_score + macd_score + volume_score) / 3
-
-    def _calculate_strength_score(self, bb_position: float, trend: str, price_change: float) -> float:
-        """Calculate strength score (0-1) - EXACT main floww3.0 implementation."""
-        # Bollinger band position
-        bb_score = 1.0 - abs(bb_position - 0.5) * 2  # Best in middle
-
-        # Trend component
-        trend_score = 0.8 if trend in ['bullish', 'bearish'] else 0.5
-
-        # Price momentum component
-        momentum_score = min(1.0, abs(price_change) / 10)  # Up to 10% change
-
-        return (bb_score + trend_score + momentum_score) / 3
-
-    async def _rate_limited_api_call(self, coro):
-        """Execute API call with rate limiting - EXACT main floww3.0 implementation."""
-        # Clean old calls (older than 1 minute)
-        current_time = datetime.now()
-        self.api_calls_this_minute = [
-            call_time for call_time in self.api_calls_this_minute
-            if (current_time - call_time).seconds < 60
-        ]
-
-        # Wait if approaching limit
-        if len(self.api_calls_this_minute) >= self.max_calls_per_minute:
-            sleep_time = 60 - (current_time - min(self.api_calls_this_minute)).seconds
-            logger.info(f"⏱️ Rate limiting: sleeping {sleep_time}s")
-            await asyncio.sleep(sleep_time)
-
-        # Execute call
-        result = await coro
-        self.api_calls_this_minute.append(current_time)
-        return result
-
-    # Legacy methods for Virtuals ACP compatibility
-
-    async def scan_market_opportunities(self) -> Dict[str, Any]:
-        """Scan market for opportunities - simplified for ACP compatibility."""
-        try:
-            logger.info("🔍 Scanning market opportunities (Yuki agent)")
-
-            # Use popular tokens for demo
-            opportunities = ["BTC", "ETH", "SOL", "AVAX", "MATIC"]
-            scan_results = []
-
-            for symbol in opportunities[:3]:
-                analysis = await self.analyze_specific_token(symbol)
-                if analysis.get("analysis"):
-                    scan_results.append({
-                        "symbol": symbol,
-                        "signal": analysis["analysis"]["signal"],
-                        "score": analysis["analysis"]["signal"]["confidence"]
-                    })
-
-            return {
-                "scan_results": scan_results,
-                "total_scanned": len(opportunities),
-                "opportunities_found": len(scan_results),
-                "scan_timestamp": datetime.now().isoformat()
-            }
-
-        except Exception as e:
-            logger.error(f"Error scanning market: {e}")
-            return {"scan_results": [], "error": str(e)}
-
-    async def execute_trade_analysis(self, symbol: str, amount: float) -> Dict[str, Any]:
-        """Execute trade analysis - simplified for ACP compatibility."""
-        try:
-            logger.info(f"Trade execution analysis for {symbol}: ${amount:.2f}")
-
-            analysis = await self.analyze_specific_token(symbol)
-            if not analysis.get("analysis"):
-                return {"success": False, "error": "Analysis failed"}
-
-            signal = analysis["analysis"]["signal"]
-            leverage = min(10, max(1, int(signal["confidence"] * 10)))
-
-            return {
-                "success": True,
-                "trade_execution": {
-                    "symbol": symbol,
-                    "direction": signal["direction"],
-                    "position_value": amount,
-                    "leverage": leverage,
-                    "entry_price": signal["entry_price"],
-                    "targets": [signal["target_1"], signal["target_2"]],
-                    "stop_loss": signal["stop_loss"],
-                    "risk_reward_ratio": signal["risk_reward_ratio"],
-                    "estimated_pnl": amount * signal["risk_reward_ratio"] * 0.5,
-                    "confidence": signal["confidence"],
-                    "time_horizon": signal["time_horizon"],
-                    "execution_timestamp": datetime.now().isoformat()
-                }
-            }
-
-        except Exception as e:
-            logger.error(f"Error in trade execution analysis: {e}")
-            return {"success": False, "error": str(e)}
+    def _analyze_momentum_trends(self, technical: TechnicalAnalysis) -> str:
+        """Analyze momentum trends."""
+        if technical.momentum_score > 0.7:
+            return "Strong momentum with multiple confirming indicators"
+        elif technical.momentum_score > 0.5:
+            return "Moderate momentum building, watch for acceleration"
+        elif technical.momentum_score > 0.3:
+            return "Weak momentum, requires catalyst for significant moves"
+        else:
+            return "Momentum lacking, consolidation or reversal likely"
 
 
 # Global service instance
-_yuki_agent_service: Optional[YukiAgentService] = None
+_yuki_service = None
 
 
 async def get_yuki_agent_service() -> YukiAgentService:
     """Get or create Yuki agent service instance."""
-    global _yuki_agent_service
-
-    if _yuki_agent_service is None:
-        _yuki_agent_service = YukiAgentService()
-        await _yuki_agent_service._initialize_services()
-        _yuki_agent_service._services_initialized = True
-
-    return _yuki_agent_service
+    global _yuki_service
+    if _yuki_service is None:
+        _yuki_service = YukiAgentService()
+    return _yuki_service

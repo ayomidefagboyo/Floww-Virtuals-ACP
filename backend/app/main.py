@@ -35,6 +35,12 @@ app.add_middleware(
 # Include Virtuals adapter router
 app.include_router(virtuals_adapter.router)
 
+# Include Agents API router
+from app.api.agents import routes as agents_routes
+app.include_router(agents_routes.router)
+
+# Token analysis handled by existing Ryu agent
+
 
 @app.get("/")
 async def root():
