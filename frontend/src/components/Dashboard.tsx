@@ -3,14 +3,12 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
-  RefreshCw,
-  Settings,
-  Bell
+  RefreshCw
 } from 'lucide-react';
-import AgentCard from './AgentCard';
+import AgentCardV2 from './AgentCardV2';
 import ResultsModal from './ResultsModal';
-import { Agent } from '@/types/agents';
-import { agentsService } from '@/services/api';
+import { Agent } from '@/types/agents_v2';
+import { agentsServiceV2 } from '@/services/api_v2';
 
 export default function Dashboard() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -30,7 +28,7 @@ export default function Dashboard() {
 
   const loadAgents = async () => {
     try {
-      const agentsData = await agentsService.getAgents();
+      const agentsData = await agentsServiceV2.getAgents();
       setAgents(agentsData);
 
       // Initialize agent statuses
@@ -67,7 +65,7 @@ export default function Dashboard() {
             throw new Error('Token symbol is required');
           }
           console.log(`🔍 Analyzing token: ${data.symbol}`);
-          result = await agentsService.analyzeToken(data.symbol);
+          result = await agentsServiceV2.analyzeToken(data.symbol);
           break;
 
         case 'yuki': {
@@ -78,7 +76,7 @@ export default function Dashboard() {
 
           // Start SSE stream; also trigger a fallback full scan in parallel if needed
           let completed = false;
-          const stop = agentsService.streamTrades((evt) => {
+          const stop = agentsServiceV2.streamTrades((evt) => {
             if (evt.type === 'progress') {
               const msg = typeof evt.data === 'string' ? evt.data : evt.data?.message;
               if (msg) setProgressLogs((logs) => [...logs, msg]);
@@ -95,7 +93,7 @@ export default function Dashboard() {
 
           // Also fetch the full result once ready to populate modal in one go if desired
           try {
-            result = await agentsService.scanTrades();
+            result = await agentsServiceV2.scanTrades();
           } finally {
             // Close stream when full result returns or errors
             stop?.();
@@ -106,7 +104,8 @@ export default function Dashboard() {
 
         case 'sakura':
           console.log('🌸 Finding yield opportunities...');
-          result = await agentsService.getYieldOpportunities();
+          const investmentAmount = data?.investment_amount || 10000;
+          result = await agentsServiceV2.getYieldOpportunities(investmentAmount);
           break;
 
         default:
@@ -145,12 +144,23 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold text-primary-100">
                 Floww <span className="text-gradient">X Virtuals</span>
               </h1>
-              <p className="text-sm text-primary-400 mt-1">
-                AI Trading Agents Dashboard
-              </p>
             </div>
 
             <div className="flex items-center gap-4">
+              <a
+                href="#"
+                className="hidden"
+                title="Hidden"
+              >
+                
+              </a>
+              <a
+                href="/roadmap"
+                className="btn-ghost text-sm font-medium"
+                title="View Roadmap"
+              >
+                Roadmap
+              </a>
               <button
                 onClick={handleRefresh}
                 disabled={isRefreshing}
@@ -158,12 +168,6 @@ export default function Dashboard() {
                 title="Refresh agents"
               >
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              </button>
-              <button className="btn-ghost" title="Notifications">
-                <Bell className="w-4 h-4" />
-              </button>
-              <button className="btn-ghost" title="Settings">
-                <Settings className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -212,7 +216,7 @@ export default function Dashboard() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: index * 0.1 }}
                 >
-                  <AgentCard
+                  <AgentCardV2
                     agent={agent}
                     onAction={handleAgentAction}
                   />
@@ -220,51 +224,7 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* Live Yuki Scan Progress */}
-            {(agentStatuses['yuki'] === 'analyzing' || progressLogs.length > 0 || liveOpportunities.length > 0) && (
-              <div className="mt-10 p-4 rounded-lg border border-primary-800 bg-primary-900/60">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-primary-200">Yuki Scan Progress</h3>
-                  {cancelStream && (
-                    <button
-                      className="text-xs text-error-300 hover:text-error-200"
-                      onClick={() => { cancelStream?.(); setCancelStream(null); setProgressLogs((l)=>[...l,'Stream cancelled']); }}
-                    >
-                      Cancel stream
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs text-primary-400 mb-1">Logs</div>
-                    <div className="h-32 overflow-auto rounded bg-primary-950/50 p-3 text-xs text-primary-300 space-y-1">
-                      {progressLogs.length === 0 ? (
-                        <div className="text-primary-500">Waiting for updates…</div>
-                      ) : (
-                        progressLogs.map((log, i) => (
-                          <div key={i}>• {log}</div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-primary-400 mb-1">Found Opportunities</div>
-                    <div className="h-32 overflow-auto rounded bg-primary-950/50 p-3 text-xs text-primary-300 space-y-2">
-                      {liveOpportunities.length === 0 ? (
-                        <div className="text-primary-500">No opportunities yet…</div>
-                      ) : (
-                        liveOpportunities.map((o, i) => (
-                          <div key={i} className="flex items-center justify-between">
-                            <span className="text-primary-200">{o.symbol}</span>
-                            <span className="text-primary-500">{o.direction} · {(o.confidence ?? 0).toFixed?.(2) ?? o.confidence}</span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Live Yuki Scan Progress removed per request */}
           </section>
         )}
 
@@ -272,7 +232,7 @@ export default function Dashboard() {
         <div className="mt-8 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-800/50 text-primary-400 text-xs">
             <div className="w-2 h-2 rounded-full bg-success-400 animate-pulse-soft" />
-            Connected to Floww Backend (Port 8001)
+            Connected via Next.js API proxy (/api → :8001)
           </div>
         </div>
 

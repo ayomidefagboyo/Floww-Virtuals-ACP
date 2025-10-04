@@ -32,32 +32,27 @@ class LLMProvider(Enum):
 @dataclass
 class MarketContext:
     """Market context for LLM analysis."""
+    # Required fields (no defaults)
     timestamp: datetime
     symbol: str
     current_price: float
     price_change_24h: float
     volume_24h: float
     volatility: float
-    
-    # Technical indicators
     rsi: float
     macd: float
     bb_position: float  # Position within Bollinger Bands (0-1)
-    
-    # Market sentiment
     fear_greed_index: int
     social_sentiment: str
     news_sentiment: str
-    
-    # Market regime context
+
+    # Optional fields (with defaults)
+    high_24h: float = 0.0
+    low_24h: float = 0.0
     market_regime: str = "sideways"  # bull_market, bear_market, or sideways
-    
-    # Fundamental data
     market_cap: Optional[float] = None
     funding_rate: Optional[float] = None
     open_interest_change: Optional[float] = None
-    
-    # Recent news/events
     recent_news: List[str] = field(default_factory=list)
     market_narrative: str = ""
 
@@ -131,16 +126,9 @@ class LLMAnalysisService:
                 try:
                     self.client = anthropic.Anthropic(api_key=api_key)
                     logger.info("Claude client initialized successfully")
-                except TypeError as e:
-                    # Handle version compatibility issue
-                    logger.warning(f"Claude client initialization failed: {e}")
-                    logger.info("Attempting fallback initialization...")
-                    try:
-                        self.client = anthropic.Client(api_key=api_key)
-                        logger.info("Claude client initialized with fallback method")
-                    except Exception as fallback_error:
-                        logger.error(f"Claude client fallback failed: {fallback_error}")
-                        self.client = None
+                except Exception as e:
+                    logger.error(f"Claude client initialization failed: {e}")
+                    self.client = None
             else:
                 logger.warning("Claude API key not found or anthropic not installed")
         else:
@@ -148,7 +136,11 @@ class LLMAnalysisService:
         
         # Analysis configuration
         self.max_context_length = 8000  # Claude-3 Haiku context limit
-    
+
+    def is_available(self) -> bool:
+        """Check if LLM analysis service is available."""
+        return self.client is not None and self.provider == LLMProvider.CLAUDE
+
     def safe_float(self, value, fallback=0.0):
         """Safely convert a value to float, handling dicts and None values."""
         try:
@@ -340,10 +332,10 @@ Remember: Users need clear, actionable guidance. Be specific about entry, target
     async def analyze_trading_context(self, context: Dict[str, Any]) -> Optional['LLMAnalysis']:
         """
         Analyze trading context for opportunity enhancement (similar to technical process flow).
-        
+
         Args:
             context: Trading context dictionary with symbol, indicators, etc.
-            
+
         Returns:
             LLM analysis with confidence adjustments and risk factors
         """
@@ -352,9 +344,9 @@ Remember: Users need clear, actionable guidance. Be specific about entry, target
             if not self.client:
                 logger.warning("LLM client not available for trading context analysis")
                 return None
-            
+
             logger.info(f"🧠 Running AI context analysis for {context.get('symbol', 'unknown')}")
-            
+
             # Convert context dict to MarketContext for consistency with existing flow
             market_context = MarketContext(
                 timestamp=datetime.now(),
@@ -363,12 +355,12 @@ Remember: Users need clear, actionable guidance. Be specific about entry, target
                 price_change_24h=context.get('market_context', {}).get('price_change_24h', 0.0),
                 volume_24h=context.get('market_context', {}).get('volume_24h', 0.0),
                 volatility=0.05,  # Default
-                
+
                 # Technical indicators
                 rsi=context.get('technical_indicators', {}).get('rsi', 50.0),
                 macd=context.get('technical_indicators', {}).get('macd', 0.0),
                 bb_position=context.get('technical_indicators', {}).get('bollinger_position', 0.5),
-                
+
                 # Default sentiment values
                 fear_greed_index=50,
                 social_sentiment="neutral",
@@ -376,20 +368,20 @@ Remember: Users need clear, actionable guidance. Be specific about entry, target
                 market_regime="sideways",
                 market_narrative="Market analysis in progress"
             )
-            
+
             # Build simplified prompt for context enhancement
             prompt = self._build_context_analysis_prompt(context, market_context)
-            
+
             # Get LLM response
             response = await self._query_llm(prompt)
-            
+
             # Parse response into analysis
             analysis = self._parse_context_response(response, context)
-            
+
             logger.info(f"🧠 AI context analysis completed for {context.get('symbol', 'unknown')}: confidence_score={analysis.confidence:.3f}")
-            
+
             return analysis
-            
+
         except Exception as e:
             logger.error(f"❌ Error in trading context analysis: {e}")
             return None
@@ -448,19 +440,99 @@ TECHNICAL INDICATORS:
 - MACD: {safe_macd_value(market_context.macd):.4f}
 - Bollinger Position: {context.get('technical_indicators', {}).get('bollinger_position', 0.5):.2f}
 
-Provide a quick assessment in this exact JSON format:
+COMPREHENSIVE TECHNICAL ANALYSIS REVIEW:
+
+PRICE DATA:
+- Current Price: ${market_context.current_price:,.4f}
+- 24h Change: {market_context.price_change_24h:+.2f}%
+- 24h High: ${context.get('market_context', {}).get('high_24h', market_context.current_price * 1.05):,.4f}
+- 24h Low: ${context.get('market_context', {}).get('low_24h', market_context.current_price * 0.95):,.4f}
+- Volume: {market_context.volume_24h:,.0f}
+
+TECHNICAL INDICATORS:
+
+MOMENTUM OSCILLATORS:
+- RSI (14): {market_context.rsi:.1f} ({'Overbought' if market_context.rsi > 70 else 'Oversold' if market_context.rsi < 30 else 'Neutral'})
+- MACD Line: {safe_macd_value(market_context.macd):.6f}
+- MACD Signal: {context.get('technical_indicators', {}).get('macd_signal', 0):.6f}
+- MACD Histogram: {context.get('technical_indicators', {}).get('macd_histogram', 0):.6f}
+- MACD Crossover: {'Bullish' if safe_macd_value(market_context.macd) > context.get('technical_indicators', {}).get('macd_signal', 0) else 'Bearish'}
+
+BOLLINGER BANDS:
+- Upper Band: ${context.get('technical_indicators', {}).get('bb_upper', 0):.4f}
+- Middle Band: ${context.get('technical_indicators', {}).get('bb_middle', 0):.4f}
+- Lower Band: ${context.get('technical_indicators', {}).get('bb_lower', 0):.4f}
+- Position in Bands: {context.get('technical_indicators', {}).get('bollinger_position', 0.5):.3f} ({'Above upper' if context.get('technical_indicators', {}).get('bollinger_position', 0.5) > 1.0 else 'Upper band' if context.get('technical_indicators', {}).get('bollinger_position', 0.5) > 0.8 else 'Middle zone' if context.get('technical_indicators', {}).get('bollinger_position', 0.5) > 0.2 else 'Lower band' if context.get('technical_indicators', {}).get('bollinger_position', 0.5) > 0.0 else 'Below lower'})
+- BB Squeeze: {'Yes - Low volatility' if abs(context.get('technical_indicators', {}).get('bb_upper', 0) - context.get('technical_indicators', {}).get('bb_lower', 0)) / market_context.current_price < 0.05 else 'No - Normal volatility'}
+
+MOVING AVERAGES:
+- EMA 20: ${context.get('technical_indicators', {}).get('ema_20', 0):.4f} ({'Above' if market_context.current_price > context.get('technical_indicators', {}).get('ema_20', 0) else 'Below'} current price)
+- EMA 50: ${context.get('technical_indicators', {}).get('ema_50', 0):.4f} ({'Above' if market_context.current_price > context.get('technical_indicators', {}).get('ema_50', 0) else 'Below'} current price)
+- EMA Cross: {'Golden Cross' if context.get('technical_indicators', {}).get('ema_20', 0) > context.get('technical_indicators', {}).get('ema_50', 0) else 'Death Cross'}
+- SMA 20: ${context.get('technical_indicators', {}).get('sma_20', 0):.4f}
+
+VOLUME ANALYSIS:
+- Volume 24h: {market_context.volume_24h:,.0f}
+- Volume SMA (10): {context.get('technical_indicators', {}).get('volume_sma_10', 0):,.0f}
+- Volume Ratio: {context.get('technical_indicators', {}).get('volume_ratio', 1):.2f}x ({'High volume' if context.get('technical_indicators', {}).get('volume_ratio', 1) > 1.5 else 'Above average' if context.get('technical_indicators', {}).get('volume_ratio', 1) > 1.2 else 'Normal' if context.get('technical_indicators', {}).get('volume_ratio', 1) > 0.8 else 'Low volume'})
+
+VOLATILITY METRICS:
+- ATR (14): ${context.get('technical_indicators', {}).get('atr_14', 0):.6f}
+- Volatility 24h: {context.get('technical_indicators', {}).get('volatility_24h', 0):.3f}%
+- Price Range: {((context.get('market_context', {}).get('high_24h', market_context.current_price * 1.05) - context.get('market_context', {}).get('low_24h', market_context.current_price * 0.95)) / market_context.current_price * 100):.2f}% (High-Low/Current)
+
+SUPPORT & RESISTANCE:
+- Support Level: ${context.get('technical_indicators', {}).get('support_level', 0):.4f} ({((market_context.current_price - context.get('technical_indicators', {}).get('support_level', 1)) / max(context.get('technical_indicators', {}).get('support_level', 1), 0.0001) * 100):.2f}% above)
+- Resistance Level: ${context.get('technical_indicators', {}).get('resistance_level', 0):.4f} ({((context.get('technical_indicators', {}).get('resistance_level', 1) - market_context.current_price) / max(market_context.current_price, 0.0001) * 100):.2f}% above)
+
+TREND & MOMENTUM:
+- Trend Direction: {context.get('technical_indicators', {}).get('trend_direction', 'UNKNOWN')}
+- Momentum Score: {context.get('technical_indicators', {}).get('momentum_score', 0):.2f}/1.0 ({'Strong' if context.get('technical_indicators', {}).get('momentum_score', 0) > 0.7 else 'Moderate' if context.get('technical_indicators', {}).get('momentum_score', 0) > 0.4 else 'Weak'})
+- Strength Score: {context.get('technical_indicators', {}).get('strength_score', 0):.2f}/1.0 ({'Strong' if context.get('technical_indicators', {}).get('strength_score', 0) > 0.7 else 'Moderate' if context.get('technical_indicators', {}).get('strength_score', 0) > 0.4 else 'Weak'})
+
+MATHEMATICAL CONFIDENCE: {confidence:.3f}
+
+CANDLESTICK ANALYSIS (OHLCV):
+{context.get('ohlcv_analysis', 'Recent candlestick data: Available for analysis')}
+
+PATTERN RECOGNITION:
+- Recent price action and candlestick patterns
+- Volume confirmation with price moves
+- Support/resistance test behavior
+- Breakout/breakdown patterns
+- Consolidation vs trending phases
+
+As an expert trader, analyze ALL these indicators holistically and determine the optimal trading direction. Consider:
+- Trend strength and direction
+- Momentum and volume confirmation
+- Overbought/oversold conditions vs momentum
+- Support/resistance levels
+- Risk/reward at current levels
+- Multiple timeframe confluence
+
+Provide your professional trading decision in this exact JSON format:
 {{
-    "confidence_score": 0.75,
-    "risk_factors": ["Factor 1", "Factor 2"],
-    "enhancement_reasoning": "Brief explanation of confidence adjustment"
+    "direction": "LONG or SHORT",
+    "confidence": your_confidence_0_to_1,
+    "reasoning": "Comprehensive explanation of your trading thesis",
+    "key_factors": ["Primary technical factor", "Secondary technical factor", "Risk/reward factor"],
+    "entry_price": your_calculated_entry,
+    "target_1": your_calculated_target_1,
+    "target_2": your_calculated_target_2,
+    "stop_loss": your_calculated_stop,
+    "risk_reward_ratio": your_calculated_ratio,
+    "time_horizon": "short-term/medium-term/long-term",
+    "risk_factors": ["Primary risk", "Secondary risk"],
+    "risk_assessment": "LOW/MEDIUM/HIGH",
+    "risk_level": "LOW/MEDIUM/HIGH",
+    "position_size": 1.0,
+    "leverage": 1.0,
+    "target_1_probability": your_probability_estimate,
+    "target_2_probability": your_probability_estimate,
+    "view_insights": {{"ai_enhanced": true, "analysis_depth": "comprehensive"}}
 }}
 
-Guidelines:
-1. confidence_score should be 0.3-0.9 (will be used to adjust mathematical confidence by ±5%)
-2. risk_factors should be max 2 most important concerns
-3. enhancement_reasoning should be 1-2 sentences explaining your assessment
-4. Consider the mathematical confidence of {confidence:.3f} and whether technical setup supports it
-5. Focus on immediate risk/reward for this specific setup
+MAKE YOUR DECISION based on the complete technical picture, not simple rules.
 """
         
         return prompt
@@ -468,55 +540,47 @@ Guidelines:
     def _parse_context_response(self, response: str, context: Dict[str, Any]) -> 'LLMAnalysis':
         """Parse AI context response into analysis object."""
         try:
-            # Try to parse JSON response
+            # Debug: Log the full response first
+            logger.info(f"🧠 Full Claude response: {repr(response[:1000])}")
+
+            # Extract JSON from response and clean it
             if '{' in response and '}' in response:
                 start = response.find('{')
                 end = response.rfind('}') + 1
                 json_str = response[start:end]
-                
-                # Clean JSON string
-                json_str = self._clean_json_string(json_str)
-                
-                data = json.loads(json_str)
-                
-                # Validate that this isn't a generic/example response
-                reasoning = data.get('enhancement_reasoning', 'AI analysis completed')
-                generic_phrases = [
-                    'technical indicators show oversold conditions',
-                    'fundamentals remain strong',
-                    'current price offers good risk-reward',
-                    'Provide specific analysis based on actual',
-                    'AI analysis completed',
-                    'Technical analysis fallback'
-                ]
-                
-                if any(phrase.lower() in reasoning.lower() for phrase in generic_phrases):
-                    logger.warning(f"Detected generic AI response, filtering out: {reasoning}")
-                    return None
-                
-                confidence_score = float(data.get('confidence_score', 0.5))
-                risk_factors = data.get('risk_factors', [])
-                
-                # Also validate risk factors aren't generic
-                if risk_factors and any('Technical analysis' in factor for factor in risk_factors):
-                    logger.warning("Detected generic risk factors, filtering out")
-                    return None
-                
-                # Create analysis object compatible with existing flow
-                analysis = LLMAnalysis(
-                    recommendation='HOLD',  # Not used in context analysis
-                    confidence=confidence_score,
-                    action_summary=reasoning,
-                    reasoning=reasoning,
-                    key_factors=risk_factors[:2],  # Limit to 2 factors
-                    risk_assessment='MEDIUM',
-                    time_horizon='medium'
-                )
-                
-                # Store risk factors for enhancement
-                analysis.risk_factors = risk_factors[:2]
-                
-                return analysis
+            else:
+                logger.warning(f"No JSON structure found in response: {repr(response[:200])}")
+                return None
+
+            # Debug: Log the raw JSON string
+            logger.info(f"📝 Raw JSON from Claude: {repr(json_str[:500])}")
+
+            # Clean JSON string using our robust cleaning function
+            json_str = self._clean_json_string(json_str)
+
+            # Debug: Log the cleaned JSON string
+            logger.info(f"🧹 Cleaned JSON: {repr(json_str[:500])}")
+
+            data = json.loads(json_str)
+
+            # Validate that this isn't a generic/example response
+            reasoning = data.get('reasoning', 'AI analysis completed')
+            generic_phrases = [
+                'Clear explanation of why this is a good trade',
+                'technical indicators show oversold conditions',
+                'fundamentals remain strong',
+                'current price offers good risk-reward',
+                'Provide specific analysis based on actual',
+                'AI analysis completed',
+                'Technical analysis fallback'
+            ]
+
+            if any(phrase.lower() in reasoning.lower() for phrase in generic_phrases):
+                logger.warning(f"Detected generic AI response, filtering out: {reasoning}")
+                return None
+
+            # Return the complete trading decision data structure
+            return data
                 
         except Exception as e:
             logger.warning(f"Failed to parse AI context response: {e}")
@@ -533,12 +597,14 @@ Guidelines:
             if self.provider == LLMProvider.CLAUDE:
                 response = await asyncio.to_thread(
                     self.client.messages.create,
-                    model="claude-3-sonnet-20240229",  # Superior reasoning for trading decisions
+                    model="claude-sonnet-4-20250514",  # Latest Claude Sonnet 4 model
                     max_tokens=2000,
                     temperature=0.1,  # Low temperature for consistent analysis
                     messages=[{"role": "user", "content": prompt}]
                 )
-                return response.content[0].text
+                result = response.content[0].text
+                logger.info(f"🧠 Claude FULL response: {repr(result)}")
+                return result
             else:
                 raise ValueError(f"Unsupported LLM provider: {self.provider}. Only Claude is supported.")
                 
@@ -631,10 +697,29 @@ Guidelines:
     def _clean_json_string(self, json_str: str) -> str:
         """Clean common JSON parsing issues from LLM responses."""
         import re
-        
+
         # Remove any text before first { or after last }
         json_str = json_str.strip()
-        
+
+        # Handle markdown code blocks (```json ... ``` or ``` ... ```)
+        if json_str.startswith('```'):
+            # Find content between code block markers
+            lines = json_str.split('\n')
+            json_lines = []
+            in_code_block = False
+
+            for line in lines:
+                if line.strip().startswith('```'):
+                    if not in_code_block:
+                        in_code_block = True
+                        continue
+                    else:
+                        break
+                elif in_code_block:
+                    json_lines.append(line)
+
+            json_str = '\n'.join(json_lines).strip()
+
         # Handle completely malformed responses that start with invalid characters
         if not json_str.startswith('{') and not json_str.startswith('['):
             # Try to find JSON-like content

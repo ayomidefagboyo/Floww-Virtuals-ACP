@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -12,7 +13,9 @@ import {
   BarChart3,
   Leaf,
   Zap,
-  Search
+  Search,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { formatCurrency, formatPercentage } from '@/utils/formatters';
 
@@ -28,6 +31,110 @@ interface ResultsModalProps {
     logs: string[];
     opportunities: any[]; // raw SSE opps from backend
   };
+}
+
+// Expandable Opportunity Card Component
+function OpportunityCard({ opportunity: opp }: { opportunity: any }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="card-premium cursor-pointer transition-all duration-200 hover:bg-primary-700/30">
+      <div
+        className="flex items-center justify-between mb-4"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-3">
+          <h4 className="font-semibold text-primary-100">{opp.symbol}</h4>
+          <span className={`px-2 py-1 rounded text-xs font-medium ${
+            opp.direction === 'LONG' ? 'bg-success-500/20 text-success-400' : 'bg-error-500/20 text-error-400'
+          }`}>
+            {opp.direction}
+          </span>
+          <span className="text-xs text-primary-500">
+            Risk: {opp.risk_level || opp.riskLevel || 'MEDIUM'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="text-sm text-primary-400">
+            {typeof opp.confidence === 'number' ? (opp.confidence * 100).toFixed(0) : opp.confidence}% confidence
+          </div>
+          {isExpanded ?
+            <ChevronUp className="w-4 h-4 text-primary-400" /> :
+            <ChevronDown className="w-4 h-4 text-primary-400" />
+          }
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4 mb-3">
+        <div>
+          <div className="text-xs text-primary-400">Entry Price</div>
+          <div className="font-mono text-primary-100">{formatCurrency(opp.entryPrice || opp.entry_price)}</div>
+        </div>
+        <div>
+          <div className="text-xs text-primary-400">Take Profit</div>
+          <div className="font-mono text-success-400">{formatCurrency(opp.target1 || opp.target_1)}</div>
+        </div>
+        <div>
+          <div className="text-xs text-primary-400">Stop Loss</div>
+          <div className="font-mono text-error-400">{formatCurrency(opp.stopLoss || opp.stop_loss)}</div>
+        </div>
+      </div>
+
+      <div className="text-sm text-primary-400 mb-3">{opp.reasoning}</div>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-t border-primary-700/50 pt-3 space-y-3"
+          >
+            {/* Risk/Reward Ratio */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs text-primary-400">Risk/Reward Ratio</div>
+                <div className="text-sm font-mono text-primary-100">
+                  1:{(opp.riskRewardRatio || opp.risk_reward_ratio || 0).toFixed(2)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-primary-400">Time Horizon</div>
+                <div className="text-sm text-primary-200">{opp.timeHorizon || opp.time_horizon || 'Short-term'}</div>
+              </div>
+            </div>
+
+            {/* Key Factors */}
+            {(opp.keyFactors || opp.key_factors) && (
+              <div>
+                <div className="text-xs text-primary-400 mb-2">Key Factors</div>
+                <div className="flex flex-wrap gap-1">
+                  {(opp.keyFactors || opp.key_factors).map((factor: string, i: number) => (
+                    <span key={i} className="px-2 py-1 bg-accent-500/10 text-accent-400 rounded text-xs">
+                      {factor}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Technical Analysis */}
+            {opp.technical_analysis && (
+              <div>
+                <div className="text-xs text-primary-400 mb-2">Technical Indicators</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>RSI: {opp.technical_analysis.rsi_14?.toFixed(1) || 'N/A'}</div>
+                  <div>MACD: {opp.technical_analysis.macd_line?.toFixed(4) || 'N/A'}</div>
+                  <div>BB Position: {(opp.technical_analysis.bb_position * 100)?.toFixed(1) || 'N/A'}%</div>
+                  <div>Strength: {(opp.technical_analysis.strength_score * 100)?.toFixed(0) || 'N/A'}%</div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 export default function ResultsModal({ isOpen, onClose, result, yukiStream }: ResultsModalProps) {
@@ -334,30 +441,17 @@ export default function ResultsModal({ isOpen, onClose, result, yukiStream }: Re
 
     return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4 pb-6 border-b border-primary-700/50">
-        <div className="p-3 rounded-xl bg-accent-500/10 text-accent-400">
-          <Zap className="w-6 h-6" />
-        </div>
-        <div>
-          <h3 className="text-xl font-semibold text-primary-100">
-            Market Opportunities
-          </h3>
-          <p className="text-sm text-primary-400">
-            {combined.length} opportunities found{typeof data?.totalScanned === 'number' ? ` from ${data.totalScanned} pairs scanned` : ''}
-          </p>
-        </div>
-      </div>
+      {/* Header removed to avoid duplication with modal header */}
 
       {/* Streaming status & logs */}
       {yukiStream && (
         <div className="card-premium">
           <div className="flex items-center justify-between mb-2">
-            <div className="text-sm text-primary-400">Live Scan</div>
+            <div className="text-sm text-primary-400">Live Futures Scan</div>
             {yukiStream.isStreaming && (
               <div className="inline-flex items-center gap-2 text-xs text-accent-400">
                 <span className="w-2 h-2 rounded-full bg-accent-400 animate-pulse-soft" />
-                Streaming...
+                Scanning...
               </div>
             )}
           </div>
@@ -373,47 +467,12 @@ export default function ResultsModal({ isOpen, onClose, result, yukiStream }: Re
         </div>
       )}
 
-      {/* Market Condition */}
-      <div className="card-premium">
-        <div className="text-sm text-primary-400 mb-1">Market Condition</div>
-        <div className="text-lg font-semibold text-primary-100">{data.marketCondition}</div>
-      </div>
+      {/* Market Condition - removed per request */}
 
       {/* Opportunities */}
       <div className="space-y-4">
         {combined.map((opp: any, index: number) => (
-          <div key={opp.id} className="card-premium">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <h4 className="font-semibold text-primary-100">{opp.symbol}</h4>
-                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                  opp.direction === 'LONG' ? 'bg-success-500/20 text-success-400' : 'bg-error-500/20 text-error-400'
-                }`}>
-                  {opp.direction}
-                </span>
-              </div>
-              <div className="text-sm text-primary-400">
-                {typeof opp.confidence === 'number' ? (opp.confidence * 100).toFixed(0) : opp.confidence}% confidence
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 mb-3">
-              <div>
-                <div className="text-xs text-primary-400">Entry</div>
-                <div className="font-mono text-primary-100">{formatCurrency(opp.entryPrice)}</div>
-              </div>
-              <div>
-                <div className="text-xs text-primary-400">Target</div>
-                <div className="font-mono text-success-400">{formatCurrency(opp.target1)}</div>
-              </div>
-              <div>
-                <div className="text-xs text-primary-400">Stop Loss</div>
-                <div className="font-mono text-error-400">{formatCurrency(opp.stopLoss)}</div>
-              </div>
-            </div>
-
-            <div className="text-sm text-primary-400">{opp.reasoning}</div>
-          </div>
+          <OpportunityCard key={opp.id} opportunity={opp} />
         ))}
       </div>
     </div>
@@ -439,30 +498,102 @@ export default function ResultsModal({ isOpen, onClose, result, yukiStream }: Re
 
       {/* Portfolio Recommendation */}
       <div className="card-premium">
-        <h4 className="font-semibold text-primary-100 mb-2">Portfolio Recommendation</h4>
-        <div className="grid grid-cols-2 gap-4">
+        <h4 className="font-semibold text-primary-100 mb-4">Portfolio Recommendation</h4>
+        <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <div className="text-sm text-primary-400">Projected APY</div>
             <div className="text-2xl font-bold text-success-400">
-              {formatPercentage(data.portfolioRecommendation.totalProjectedApy)}
+              {formatPercentage(data.portfolio_allocation?.total_projected_apy || data.portfolioRecommendation?.totalProjectedApy || 0)}
             </div>
           </div>
           <div>
             <div className="text-sm text-primary-400">Risk Score</div>
             <div className="text-2xl font-bold text-primary-100">
-              {(data.portfolioRecommendation.riskScore * 100).toFixed(0)}/100
+              {((data.portfolio_allocation?.risk_score || data.portfolioRecommendation?.riskScore || 0) * 100).toFixed(0)}/100
             </div>
           </div>
         </div>
+
+        {/* Investment Returns Summary */}
+        {data.portfolio_allocation && (
+          <div className="border-t border-primary-700/50 pt-4">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="bg-primary-700/30 rounded-lg p-3">
+                <div className="text-xs text-primary-400">Investment</div>
+                <div className="text-lg font-bold text-primary-100">
+                  {formatCurrency(data.portfolio_allocation.investment_amount)}
+                </div>
+              </div>
+              <div className="bg-success-500/10 rounded-lg p-3">
+                <div className="text-xs text-primary-400">Annual Return</div>
+                <div className="text-lg font-bold text-success-400">
+                  {formatCurrency(data.portfolio_allocation.total_annual_return)}
+                </div>
+              </div>
+              <div className="bg-accent-500/10 rounded-lg p-3">
+                <div className="text-xs text-primary-400">Monthly Return</div>
+                <div className="text-lg font-bold text-accent-400">
+                  {formatCurrency(data.portfolio_allocation.total_monthly_return)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Opportunities */}
+      {/* Portfolio Allocations */}
+      {data.portfolio_allocation?.allocation && data.portfolio_allocation.allocation.length > 0 && (
+        <div className="space-y-4">
+          <h4 className="font-semibold text-primary-100">Recommended Allocations</h4>
+          {data.portfolio_allocation.allocation.map((alloc: any, index: number) => (
+            <div key={index} className="card-premium">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h5 className="font-semibold text-primary-100">{alloc.protocol}</h5>
+                  <p className="text-sm text-primary-400">{alloc.asset} - {alloc.strategy}</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-lg font-bold text-success-400">
+                    {formatPercentage(alloc.apy)}
+                  </div>
+                  <div className="text-xs text-primary-400">APY</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-3">
+                <div className="bg-primary-700/20 rounded-lg p-3">
+                  <div className="text-xs text-primary-400">Allocation</div>
+                  <div className="text-lg font-bold text-primary-100">
+                    {alloc.percentage}% ({formatCurrency(alloc.allocated_amount)})
+                  </div>
+                </div>
+                <div className="bg-success-500/10 rounded-lg p-3">
+                  <div className="text-xs text-primary-400">Expected Annual Return</div>
+                  <div className="text-lg font-bold text-success-400">
+                    {formatCurrency(alloc.annual_return)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-center bg-accent-500/10 rounded-lg p-2">
+                <div className="text-xs text-primary-400">Monthly Return</div>
+                <div className="text-sm font-bold text-accent-400">
+                  {formatCurrency(alloc.monthly_return)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Individual Opportunities */}
       <div className="space-y-4">
-        {data.opportunities.map((opp: any, index: number) => (
-          <div key={opp.id} className="card-premium">
+        <h4 className="font-semibold text-primary-100">All Available Opportunities</h4>
+        {data.opportunities?.map((opp: any, index: number) => (
+          <div key={opp.id || index} className="card-premium">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h4 className="font-semibold text-primary-100">{opp.protocol}</h4>
+                <h5 className="font-semibold text-primary-100">{opp.protocol}</h5>
                 <p className="text-sm text-primary-400">{opp.asset} - {opp.strategy}</p>
               </div>
               <div className="text-right">
@@ -483,19 +614,32 @@ export default function ResultsModal({ isOpen, onClose, result, yukiStream }: Re
               <div>
                 <div className="text-xs text-primary-400">Risk Level</div>
                 <div className={`text-sm font-medium ${
-                  opp.riskLevel === 'LOW' ? 'text-success-400' :
-                  opp.riskLevel === 'MEDIUM' ? 'text-warning-400' : 'text-error-400'
+                  (opp.risk_level || opp.riskLevel) === 'LOW' ? 'text-success-400' :
+                  (opp.risk_level || opp.riskLevel) === 'MEDIUM' ? 'text-warning-400' : 'text-error-400'
                 }`}>
-                  {opp.riskLevel}
+                  {opp.risk_level || opp.riskLevel}
                 </div>
               </div>
               <div>
                 <div className="text-xs text-primary-400">Min Deposit</div>
                 <div className="text-sm font-mono text-primary-100">
-                  {opp.minimumDeposit < 1 ? opp.minimumDeposit : formatCurrency(opp.minimumDeposit)}
+                  {(opp.minimum_deposit || opp.minimumDeposit) < 1 ?
+                    (opp.minimum_deposit || opp.minimumDeposit) :
+                    formatCurrency(opp.minimum_deposit || opp.minimumDeposit)}
                 </div>
               </div>
             </div>
+
+            {/* Additional Pendle-specific info */}
+            {opp.data_source === 'Pendle API' && (
+              <div className="mt-3 pt-3 border-t border-primary-700/30">
+                <div className="text-xs text-accent-400 mb-1">Live Pendle Data</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>Days to Maturity: <span className="text-primary-200">{opp.days_to_maturity}</span></div>
+                  <div>Sakura Score: <span className="text-primary-200">{(opp.sakura_score * 100).toFixed(0)}%</span></div>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -521,7 +665,18 @@ export default function ResultsModal({ isOpen, onClose, result, yukiStream }: Re
           >
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-primary-700/50">
-              <h2 className="text-lg font-semibold text-primary-100">Analysis Results</h2>
+              {result.agent === 'yuki' ? (
+                <div>
+                  <h2 className="text-lg font-semibold text-primary-100">Futures Trading Signals</h2>
+                  <p className="text-sm text-primary-400">
+                    {((yukiStream?.opportunities && yukiStream.opportunities.length > 0)
+                      ? yukiStream.opportunities.length
+                      : (result.data?.opportunities?.length || 0))} signals found
+                  </p>
+                </div>
+              ) : (
+                <h2 className="text-lg font-semibold text-primary-100">Analysis Results</h2>
+              )}
               <button
                 onClick={onClose}
                 className="p-2 rounded-lg hover:bg-primary-700/50 transition-colors"

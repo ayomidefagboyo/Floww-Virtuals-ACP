@@ -35,9 +35,17 @@ app.add_middleware(
 # Include Virtuals adapter router
 app.include_router(virtuals_adapter.router)
 
-# Include Agents API router
-from app.api.agents import routes as agents_routes
-app.include_router(agents_routes.router)
+# Include Agents API router (v2 - reliable)
+from app.api.agents import routes_v2 as agents_routes_v2
+app.include_router(agents_routes_v2.router)
+
+# Include legacy routes for backward compatibility
+from app.api.agents import routes as agents_routes_legacy
+app.include_router(agents_routes_legacy.router, prefix="/legacy")
+
+# Include WebSocket monitoring routes
+from app.api.agents import websocket_routes
+app.include_router(websocket_routes.router)
 
 # Token analysis handled by existing Ryu agent
 

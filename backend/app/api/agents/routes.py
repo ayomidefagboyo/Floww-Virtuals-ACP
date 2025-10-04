@@ -43,12 +43,9 @@ class YieldAnalysisRequest(BaseModel):
 
 @router.get("/status")
 async def get_agents_status():
-    """Get status of all trading agents."""
+    """Get status of all trading agents quickly without heavy service initialization."""
     try:
-        # Test connections to services
-        binance_service = await get_binance_service()
-        yuki_service = await get_yuki_agent_service()
-
+        # Avoid blocking on heavy service initialization; return fast, optimistic statuses
         return {
             "agents": {
                 "yuki": {
@@ -74,9 +71,9 @@ async def get_agents_status():
                 }
             },
             "services": {
-                "binance_api": "online",
-                "technical_indicators": "online",
-                "llm_analysis": "online"
+                "binance_api": "unknown",
+                "technical_indicators": "unknown",
+                "llm_analysis": "unknown"
             },
             "timestamp": datetime.utcnow().isoformat()
         }
@@ -112,24 +109,30 @@ async def yuki_trade_scan(request: TradeScanRequest):
         }
 
         for opp in opportunities:
-            result["opportunities"].append({
-                "id": opp.id,
-                "symbol": opp.symbol,
-                "direction": opp.direction,
-                "confidence": opp.confidence,
-                "entry_price": opp.entry_price,
-                "target_1": opp.target_1,
-                "target_2": opp.target_2,
-                "stop_loss": opp.stop_loss,
-                "risk_reward_ratio": opp.risk_reward_ratio,
-                "time_horizon": opp.time_horizon,
-                "reasoning": opp.reasoning,
-                "key_factors": opp.key_factors,
-                "expires_at": opp.expires_at,
-                # Enhanced Flow 3.0 fields
-                "risk_factors": opp.risk_factors,
-                "risk_assessment": opp.risk_assessment,
-                "risk_level": opp.risk_level,
+            # Handle both TradeOpportunity objects and dict fallback cases
+            if isinstance(opp, dict):
+                # Handle fallback dictionary case (e.g., no analysis available)
+                result["opportunities"].append(opp)
+            else:
+                # Handle TradeOpportunity objects
+                result["opportunities"].append({
+                    "id": opp.id,
+                    "symbol": opp.symbol,
+                    "direction": opp.direction,
+                    "confidence": opp.confidence,
+                    "entry_price": opp.entry_price,
+                    "target_1": opp.target_1,
+                    "target_2": opp.target_2,
+                    "stop_loss": opp.stop_loss,
+                    "risk_reward_ratio": opp.risk_reward_ratio,
+                    "time_horizon": opp.time_horizon,
+                    "reasoning": opp.reasoning,
+                    "key_factors": opp.key_factors,
+                    "expires_at": opp.expires_at,
+                    # Enhanced Flow 3.0 fields
+                    "risk_factors": opp.risk_factors,
+                    "risk_assessment": opp.risk_assessment,
+                    "risk_level": opp.risk_level,
                 "position_size": opp.position_size,
                 "leverage": opp.leverage,
                 "target_1_probability": opp.target_1_probability,
@@ -163,7 +166,7 @@ async def yuki_trade_scan_stream():
             logger.info("🔍 [SSE] Yuki trade scan stream started")
 
             # Emit start progress
-            yield f"event: progress\ndata: {json.dumps({"message": "Starting market scan..."})}\n\n"
+            yield f"event: progress\ndata: {json.dumps({'message': 'Starting market scan...'})}\n\n"
 
             yuki_service = await get_yuki_agent_service()
 
@@ -171,38 +174,44 @@ async def yuki_trade_scan_stream():
             opportunities = await yuki_service.scan_market_opportunities()
 
             # Emit intermediate heartbeat while formatting
-            yield f"event: progress\ndata: {json.dumps({"message": "Formatting opportunities..."})}\n\n"
+            yield f"event: progress\ndata: {json.dumps({'message': 'Formatting opportunities...'})}\n\n"
 
             for idx, opp in enumerate(opportunities, start=1):
-                payload = {
-                    "id": opp.id,
-                    "symbol": opp.symbol,
-                    "direction": opp.direction,
-                    "confidence": opp.confidence,
-                    "entry_price": opp.entry_price,
-                    "target_1": opp.target_1,
-                    "target_2": opp.target_2,
-                    "stop_loss": opp.stop_loss,
-                    "risk_reward_ratio": opp.risk_reward_ratio,
-                    "time_horizon": opp.time_horizon,
-                    "reasoning": opp.reasoning,
-                    "key_factors": opp.key_factors,
-                    "expires_at": opp.expires_at,
-                    "risk_factors": getattr(opp, "risk_factors", None),
-                    "risk_assessment": getattr(opp, "risk_assessment", None),
-                    "risk_level": getattr(opp, "risk_level", None),
-                    "position_size": getattr(opp, "position_size", None),
-                    "leverage": getattr(opp, "leverage", None),
-                    "target_1_probability": getattr(opp, "target_1_probability", None),
-                    "target_2_probability": getattr(opp, "target_2_probability", None),
-                    "view_insights": getattr(opp, "view_insights", None),
-                    "technical_scores": {
-                        "rsi": opp.technical_analysis.rsi_14,
-                        "macd": opp.technical_analysis.macd_line,
-                        "bb_position": opp.technical_analysis.bb_position,
-                        "momentum": opp.technical_analysis.momentum_score,
-                        "strength": opp.technical_analysis.strength_score,
-                    },
+                # Handle both TradeOpportunity objects and dict fallback cases
+                if isinstance(opp, dict):
+                    # Handle fallback dictionary case (e.g., no analysis available)
+                    payload = opp
+                else:
+                    # Handle TradeOpportunity objects
+                    payload = {
+                        "id": opp.id,
+                        "symbol": opp.symbol,
+                        "direction": opp.direction,
+                        "confidence": opp.confidence,
+                        "entry_price": opp.entry_price,
+                        "target_1": opp.target_1,
+                        "target_2": opp.target_2,
+                        "stop_loss": opp.stop_loss,
+                        "risk_reward_ratio": opp.risk_reward_ratio,
+                        "time_horizon": opp.time_horizon,
+                        "reasoning": opp.reasoning,
+                        "key_factors": opp.key_factors,
+                        "expires_at": opp.expires_at,
+                        "risk_factors": getattr(opp, "risk_factors", None),
+                        "risk_assessment": getattr(opp, "risk_assessment", None),
+                        "risk_level": getattr(opp, "risk_level", None),
+                        "position_size": getattr(opp, "position_size", None),
+                        "leverage": getattr(opp, "leverage", None),
+                        "target_1_probability": getattr(opp, "target_1_probability", None),
+                        "target_2_probability": getattr(opp, "target_2_probability", None),
+                        "view_insights": getattr(opp, "view_insights", None),
+                        "technical_scores": {
+                            "rsi": opp.technical_analysis.rsi_14,
+                            "macd": opp.technical_analysis.macd_line,
+                            "bb_position": opp.technical_analysis.bb_position,
+                            "momentum": opp.technical_analysis.momentum_score,
+                            "strength": opp.technical_analysis.strength_score,
+                        },
                     "index": idx,
                     "total": len(opportunities),
                 }
@@ -221,7 +230,7 @@ async def yuki_trade_scan_stream():
 
         except Exception as e:
             logger.error(f"[SSE] Yuki scan error: {e}")
-            yield f"event: error\ndata: {json.dumps({"message": str(e)})}\n\n"
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -289,95 +298,43 @@ async def ryu_token_analysis(request: TokenAnalysisRequest):
 @router.post("/sakura/yield")
 async def sakura_yield_analysis(request: YieldAnalysisRequest):
     """
-    Sakura Agent - DeFi yield farming analysis.
+    Sakura Agent - DeFi yield farming analysis with real Pendle integration.
 
     Provides conservative yield farming opportunities and portfolio
-    recommendations with focus on Pendle and other DeFi protocols.
+    recommendations using live data from Pendle and other DeFi protocols.
     """
     try:
         logger.info(f"🌸 Sakura yield analysis requested: {request.analysis_type}")
 
-        # Mock yield opportunities (would integrate with real Pendle API in production)
-        yield_opportunities = [
-            {
-                "id": "pendle_steth_2024",
-                "protocol": "Pendle",
-                "asset": "stETH",
-                "strategy": "Principal Token (PT) Fixed Yield",
-                "apy": 12.4,
-                "tvl": 125000000,
-                "risk_level": "LOW",
-                "maturity": "2024-12-28",
-                "minimum_deposit": 0.1,
-                "liquidity_score": 0.85,
-                "projected_returns": {
-                    "monthly": 1.02,
-                    "quarterly": 3.1,
-                    "yearly": 12.4
-                }
-            },
-            {
-                "id": "aave_usdc_v3",
-                "protocol": "Aave V3",
-                "asset": "USDC",
-                "strategy": "Variable Rate Lending",
-                "apy": 8.7,
-                "tvl": 892000000,
-                "risk_level": "LOW",
-                "minimum_deposit": 100,
-                "liquidity_score": 0.95,
-                "projected_returns": {
-                    "monthly": 0.72,
-                    "quarterly": 2.18,
-                    "yearly": 8.7
-                }
-            },
-            {
-                "id": "compound_eth_v3",
-                "protocol": "Compound V3",
-                "asset": "ETH",
-                "strategy": "Collateral Earning",
-                "apy": 6.2,
-                "tvl": 450000000,
-                "risk_level": "LOW",
-                "minimum_deposit": 0.05,
-                "liquidity_score": 0.90,
-                "projected_returns": {
-                    "monthly": 0.51,
-                    "quarterly": 1.55,
-                    "yearly": 6.2
-                }
-            }
-        ]
+        # Import and get the real Sakura Pendle agent
+        from app.services.sakura_agent_pendle import get_sakura_pendle_agent
+        sakura_agent = await get_sakura_pendle_agent()
 
-        # Portfolio recommendation
-        portfolio_recommendation = {
-            "allocation": [
-                {"protocol": "Pendle", "percentage": 40, "apy_contribution": 4.96},
-                {"protocol": "Aave V3", "percentage": 35, "apy_contribution": 3.04},
-                {"protocol": "Compound V3", "percentage": 25, "apy_contribution": 1.55}
-            ],
-            "total_projected_apy": 9.55,
-            "risk_score": 0.22,  # Low risk
-            "diversification_score": 0.88
+        # Execute real analysis with Pendle integration
+        analysis_params = {
+            "analysis_type": request.analysis_type,
+            "risk_preference": request.risk_preference
         }
 
+        analysis_result = await sakura_agent._execute_analysis(analysis_params)
+
+        # Format response to match API structure
         result = {
             "agent": "sakura",
             "analysis_type": request.analysis_type,
             "risk_preference": request.risk_preference,
-            "opportunities": yield_opportunities,
-            "portfolio_recommendation": portfolio_recommendation,
-            "market_analysis": {
-                "defi_tvl_trend": "stable_growth",
-                "yield_environment": "moderate",
-                "risk_sentiment": "conservative_favorable"
-            },
-            "total_tvl_analyzed": sum(opp["tvl"] for opp in yield_opportunities),
-            "timestamp": datetime.utcnow().isoformat()
+            "opportunities": analysis_result.get("opportunities", []),
+            "portfolio_recommendation": analysis_result.get("portfolio_allocation", {}),
+            "market_analysis": analysis_result.get("market_summary", {}),
+            "risk_assessment": analysis_result.get("risk_assessment", {}),
+            "total_tvl_analyzed": analysis_result.get("market_summary", {}).get("total_tvl_analyzed", 0),
+            "timestamp": analysis_result.get("timestamp", datetime.utcnow().isoformat())
         }
 
-        logger.info(f"✅ Sakura yield analysis completed: {len(yield_opportunities)} opportunities, {portfolio_recommendation['total_projected_apy']:.1f}% projected APY")
+        opportunities_count = len(result["opportunities"])
+        projected_apy = result.get("portfolio_recommendation", {}).get("total_projected_apy", 0)
+
+        logger.info(f"✅ Sakura yield analysis completed: {opportunities_count} opportunities, {projected_apy:.1f}% projected APY")
         return result
 
     except Exception as e:

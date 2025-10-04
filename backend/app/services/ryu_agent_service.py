@@ -483,7 +483,7 @@ class RyuAgentService:
             self._record_api_call()
 
             response = self.claude_client.messages.create(
-                model="claude-3-haiku-20240307",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=2000,
                 temperature=0.1,
                 messages=[{"role": "user", "content": prompt}]

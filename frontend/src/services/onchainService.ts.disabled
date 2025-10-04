@@ -1,0 +1,447 @@
+import { ethers } from 'ethers';
+
+// Contract ABIs
+const ONCHAIN_AGENTS_ABI = [
+  "function requestAnalysis(uint8 agent, string symbol, uint256 amount) external payable returns (bytes32)",
+  "function getAnalysisResult(bytes32 analysisId) external view returns (tuple(uint8 agent, uint8 recommendedStrategy, uint8 riskLevel, uint256 confidence, uint256 entryPrice, uint256 targetPrice, uint256 stopLoss, uint256 timeHorizon, uint256 timestamp, bool isValid))",
+  "function getMarketData(string symbol) external view returns (tuple(uint256 price, uint256 volume24h, uint256 volatility, uint256 rsi, uint256 macd, uint256 timestamp, bool isValid))",
+  "function agentConfigs(uint8 agent) external view returns (tuple(uint256 minConfidence, uint256 maxRiskTolerance, uint256 analysisFeeBasisPoints, bool isActive))",
+  "event AnalysisRequested(address indexed user, uint8 indexed agent, string symbol, bytes32 analysisId)",
+  "event AnalysisCompleted(bytes32 indexed analysisId, uint8 indexed agent, uint8 strategy, uint256 confidence)"
+];
+
+const ONCHAIN_ORACLE_ABI = [
+  "function getPrice(string symbol) external view returns (uint256)",
+  "function getVolume24h(string symbol) external view returns (uint256)",
+  "function getVolatility(string symbol) external view returns (uint256)",
+  "function updateMarketData(string symbol) external",
+  "function batchUpdateMarketData(string[] symbols) external",
+  "function getMarketData(string symbol) external view returns (tuple(uint256 price, uint256 volume24h, uint256 volatility, uint256 liquidity, uint256 timestamp, bool isValid))"
+];
+
+// Contract addresses (update with deployed addresses)
+const ONCHAIN_AGENTS_ADDRESS = "0x..." // Replace with deployed contract address
+const ONCHAIN_ORACLE_ADDRESS = "0x..." // Replace with deployed contract address
+
+// Enums matching the smart contract
+export enum AgentType {
+  YUKI = 0,
+  RYU = 1,
+  SAKURA = 2
+}
+
+export enum Strategy {
+  MOMENTUM_LONG = 0,
+  MOMENTUM_SHORT = 1,
+  MEAN_REVERSION = 2,
+  YIELD_FARMING = 3,
+  ARBITRAGE = 4
+}
+
+export enum RiskLevel {
+  LOW = 0,
+  MEDIUM = 1,
+  HIGH = 2,
+  EXTREME = 3
+}
+
+// Types
+export interface AnalysisResult {
+  agent: AgentType;
+  recommendedStrategy: Strategy;
+  riskLevel: RiskLevel;
+  confidence: number;
+  entryPrice: string;
+  targetPrice: string;
+  stopLoss: string;
+  timeHorizon: number;
+  timestamp: number;
+  isValid: boolean;
+}
+
+export interface MarketData {
+  price: string;
+  volume24h: string;
+  volatility: number;
+  rsi: number;
+  macd: string;
+  timestamp: number;
+  isValid: boolean;
+}
+
+export interface AgentConfig {
+  minConfidence: number;
+  maxRiskTolerance: number;
+  analysisFeeBasisPoints: number;
+  isActive: boolean;
+}
+
+export class OnchainService {
+  private provider: ethers.providers.Web3Provider | null = null;
+  private signer: ethers.Signer | null = null;
+  private agentsContract: ethers.Contract | null = null;
+  private oracleContract: ethers.Contract | null = null;
+
+  constructor() {
+    // Don't initialize on server-side
+    if (typeof window === 'undefined') return;
+
+    this.initializeContracts();
+  }
+
+  private initializeContracts() {
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+      this.provider = new ethers.providers.Web3Provider((window as any).ethereum);
+      this.signer = this.provider.getSigner();
+      this.agentsContract = new ethers.Contract(ONCHAIN_AGENTS_ADDRESS, ONCHAIN_AGENTS_ABI, this.signer);
+      this.oracleContract = new ethers.Contract(ONCHAIN_ORACLE_ADDRESS, ONCHAIN_ORACLE_ABI, this.signer);
+    }
+  }
+
+  private checkInitialized() {
+    if (!this.provider || !this.signer || !this.agentsContract || !this.oracleContract) {
+      throw new Error('Web3 provider not found. Please install MetaMask and connect your wallet.');
+    }
+  }
+
+  /**
+   * Connect wallet
+   */
+  async connectWallet(): Promise<string> {
+    try {
+      if (typeof window === 'undefined' || !(window as any).ethereum) {
+        throw new Error('MetaMask not installed');
+      }
+
+      // Initialize contracts if not already done
+      if (!this.provider) {
+        this.initializeContracts();
+      }
+
+      this.checkInitialized();
+
+      await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+      const address = await this.signer!.getAddress();
+      return address;
+    } catch (error) {
+      throw new Error('Failed to connect wallet: ' + error);
+    }
+  }
+
+  /**
+   * Request onchain agent analysis
+   */
+  async requestAnalysis(agent: AgentType, symbol: string, amount: string): Promise<string> {
+    this.checkInitialized();
+    try {
+      // Get agent config to calculate fee
+      const config = await this.getAgentConfig(agent);
+      const fee = ethers.BigNumber.from(amount).mul(config.analysisFeeBasisPoints).div(10000);
+
+      // Request analysis
+      const tx = await this.agentsContract!.requestAnalysis(agent, symbol, amount, { value: fee });
+      const receipt = await tx.wait();
+
+      // Extract analysis ID from events
+      const event = receipt.events?.find((e: any) => e.event === 'AnalysisRequested');
+      return event?.args?.analysisId;
+    } catch (error) {
+      throw new Error('Failed to request analysis: ' + error);
+    }
+  }
+
+  /**
+   * Get analysis result
+   */
+  async getAnalysisResult(analysisId: string): Promise<AnalysisResult> {
+    this.checkInitialized();
+    try {
+      const result = await this.agentsContract!.getAnalysisResult(analysisId);
+
+      return {
+        agent: result.agent,
+        recommendedStrategy: result.recommendedStrategy,
+        riskLevel: result.riskLevel,
+        confidence: result.confidence.toNumber(),
+        entryPrice: ethers.utils.formatEther(result.entryPrice),
+        targetPrice: ethers.utils.formatEther(result.targetPrice),
+        stopLoss: ethers.utils.formatEther(result.stopLoss),
+        timeHorizon: result.timeHorizon.toNumber(),
+        timestamp: result.timestamp.toNumber(),
+        isValid: result.isValid
+      };
+    } catch (error) {
+      throw new Error('Failed to get analysis result: ' + error);
+    }
+  }
+
+  /**
+   * Get market data
+   */
+  async getMarketData(symbol: string): Promise<MarketData> {
+    try {
+      const data = await this.agentsContract.getMarketData(symbol);
+
+      return {
+        price: ethers.utils.formatEther(data.price),
+        volume24h: ethers.utils.formatEther(data.volume24h),
+        volatility: data.volatility.toNumber(),
+        rsi: data.rsi.toNumber(),
+        macd: ethers.utils.formatEther(data.macd),
+        timestamp: data.timestamp.toNumber(),
+        isValid: data.isValid
+      };
+    } catch (error) {
+      throw new Error('Failed to get market data: ' + error);
+    }
+  }
+
+  /**
+   * Get agent configuration
+   */
+  async getAgentConfig(agent: AgentType): Promise<AgentConfig> {
+    try {
+      const config = await this.agentsContract.agentConfigs(agent);
+
+      return {
+        minConfidence: config.minConfidence.toNumber(),
+        maxRiskTolerance: config.maxRiskTolerance.toNumber(),
+        analysisFeeBasisPoints: config.analysisFeeBasisPoints.toNumber(),
+        isActive: config.isActive
+      };
+    } catch (error) {
+      throw new Error('Failed to get agent config: ' + error);
+    }
+  }
+
+  /**
+   * Update market data through oracle
+   */
+  async updateMarketData(symbol: string): Promise<void> {
+    try {
+      const tx = await this.oracleContract.updateMarketData(symbol);
+      await tx.wait();
+    } catch (error) {
+      throw new Error('Failed to update market data: ' + error);
+    }
+  }
+
+  /**
+   * Batch update multiple symbols
+   */
+  async batchUpdateMarketData(symbols: string[]): Promise<void> {
+    try {
+      const tx = await this.oracleContract.batchUpdateMarketData(symbols);
+      await tx.wait();
+    } catch (error) {
+      throw new Error('Failed to batch update market data: ' + error);
+    }
+  }
+
+  /**
+   * Get price from oracle
+   */
+  async getPrice(symbol: string): Promise<string> {
+    try {
+      const price = await this.oracleContract.getPrice(symbol);
+      return ethers.utils.formatEther(price);
+    } catch (error) {
+      throw new Error('Failed to get price: ' + error);
+    }
+  }
+
+  /**
+   * Subscribe to analysis events
+   */
+  async subscribeToAnalysisEvents(callback: (event: any) => void): Promise<void> {
+    this.agentsContract.on("AnalysisCompleted", (analysisId, agent, strategy, confidence, event) => {
+      callback({
+        type: "AnalysisCompleted",
+        analysisId,
+        agent: agent.toNumber(),
+        strategy: strategy.toNumber(),
+        confidence: confidence.toNumber(),
+        transactionHash: event.transactionHash
+      });
+    });
+  }
+
+  /**
+   * Unsubscribe from events
+   */
+  unsubscribeFromEvents(): void {
+    this.agentsContract.removeAllListeners();
+  }
+
+  /**
+   * Get agent name
+   */
+  getAgentName(agent: AgentType): string {
+    switch (agent) {
+      case AgentType.YUKI:
+        return "Yuki";
+      case AgentType.RYU:
+        return "Ryu";
+      case AgentType.SAKURA:
+        return "Sakura";
+      default:
+        return "Unknown";
+    }
+  }
+
+  /**
+   * Get strategy name
+   */
+  getStrategyName(strategy: Strategy): string {
+    switch (strategy) {
+      case Strategy.MOMENTUM_LONG:
+        return "Momentum Long";
+      case Strategy.MOMENTUM_SHORT:
+        return "Momentum Short";
+      case Strategy.MEAN_REVERSION:
+        return "Mean Reversion";
+      case Strategy.YIELD_FARMING:
+        return "Yield Farming";
+      case Strategy.ARBITRAGE:
+        return "Arbitrage";
+      default:
+        return "Unknown";
+    }
+  }
+
+  /**
+   * Get risk level name
+   */
+  getRiskLevelName(riskLevel: RiskLevel): string {
+    switch (riskLevel) {
+      case RiskLevel.LOW:
+        return "Low";
+      case RiskLevel.MEDIUM:
+        return "Medium";
+      case RiskLevel.HIGH:
+        return "High";
+      case RiskLevel.EXTREME:
+        return "Extreme";
+      default:
+        return "Unknown";
+    }
+  }
+
+  /**
+   * Format time horizon
+   */
+  formatTimeHorizon(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) {
+      return `${days}d ${hours % 24}h`;
+    } else {
+      return `${hours}h`;
+    }
+  }
+
+  /**
+   * Calculate percentage change
+   */
+  calculatePercentageChange(entryPrice: string, targetPrice: string): string {
+    const entry = parseFloat(entryPrice);
+    const target = parseFloat(targetPrice);
+    const change = ((target - entry) / entry) * 100;
+    return change.toFixed(2);
+  }
+
+  /**
+   * Calculate risk/reward ratio
+   */
+  calculateRiskRewardRatio(entryPrice: string, targetPrice: string, stopLoss: string): string {
+    const entry = parseFloat(entryPrice);
+    const target = parseFloat(targetPrice);
+    const stop = parseFloat(stopLoss);
+
+    const reward = Math.abs(target - entry);
+    const risk = Math.abs(entry - stop);
+
+    if (risk === 0) return "∞";
+
+    const ratio = reward / risk;
+    return ratio.toFixed(2);
+  }
+}
+
+// Export singleton instance (only initialize on client-side)
+let _onchainService: OnchainService | null = null;
+
+export const onchainService = {
+  getInstance(): OnchainService {
+    if (!_onchainService) {
+      _onchainService = new OnchainService();
+    }
+    return _onchainService;
+  },
+
+  // Delegate methods
+  async connectWallet(): Promise<string> {
+    return this.getInstance().connectWallet();
+  },
+
+  async requestAnalysis(agent: AgentType, symbol: string, amount: string): Promise<string> {
+    return this.getInstance().requestAnalysis(agent, symbol, amount);
+  },
+
+  async getAnalysisResult(analysisId: string): Promise<AnalysisResult> {
+    return this.getInstance().getAnalysisResult(analysisId);
+  },
+
+  async getMarketData(symbol: string): Promise<MarketData> {
+    return this.getInstance().getMarketData(symbol);
+  },
+
+  async getAgentConfig(agent: AgentType): Promise<AgentConfig> {
+    return this.getInstance().getAgentConfig(agent);
+  },
+
+  async updateMarketData(symbol: string): Promise<void> {
+    return this.getInstance().updateMarketData(symbol);
+  },
+
+  async batchUpdateMarketData(symbols: string[]): Promise<void> {
+    return this.getInstance().batchUpdateMarketData(symbols);
+  },
+
+  async getPrice(symbol: string): Promise<string> {
+    return this.getInstance().getPrice(symbol);
+  },
+
+  async subscribeToAnalysisEvents(callback: (event: any) => void): Promise<void> {
+    return this.getInstance().subscribeToAnalysisEvents(callback);
+  },
+
+  unsubscribeFromEvents(): void {
+    return this.getInstance().unsubscribeFromEvents();
+  },
+
+  getAgentName(agent: AgentType): string {
+    return this.getInstance().getAgentName(agent);
+  },
+
+  getStrategyName(strategy: Strategy): string {
+    return this.getInstance().getStrategyName(strategy);
+  },
+
+  getRiskLevelName(riskLevel: RiskLevel): string {
+    return this.getInstance().getRiskLevelName(riskLevel);
+  },
+
+  formatTimeHorizon(seconds: number): string {
+    return this.getInstance().formatTimeHorizon(seconds);
+  },
+
+  calculatePercentageChange(entryPrice: string, targetPrice: string): string {
+    return this.getInstance().calculatePercentageChange(entryPrice, targetPrice);
+  },
+
+  calculateRiskRewardRatio(entryPrice: string, targetPrice: string, stopLoss: string): string {
+    return this.getInstance().calculateRiskRewardRatio(entryPrice, targetPrice, stopLoss);
+  }
+};

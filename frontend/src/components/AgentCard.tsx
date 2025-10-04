@@ -184,9 +184,9 @@ export default function AgentCard({ agent, onAction }: AgentCardProps) {
           )}
           {agent.id === 'yuki' && (
             <>
-              <div>• Real-time market scanning across 500+ pairs</div>
-              <div>• High-confidence trade opportunities</div>
-              <div>• Precise entry/target levels with timing</div>
+              <div>• Real-time futures market scanning (500+ pairs)</div>
+              <div>• LONG/SHORT signals with confidence scoring</div>
+              <div>• Entry, target & stop-loss levels for leverage trading</div>
             </>
           )}
           {agent.id === 'sakura' && (
@@ -218,7 +218,7 @@ export default function AgentCard({ agent, onAction }: AgentCardProps) {
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>
                 {agent.id === 'ryu' && 'Analyzing Token...'}
-                {agent.id === 'yuki' && 'Scanning Markets...'}
+                {agent.id === 'yuki' && 'Scanning Futures Markets...'}
                 {agent.id === 'sakura' && 'Finding Yields...'}
               </span>
             </>

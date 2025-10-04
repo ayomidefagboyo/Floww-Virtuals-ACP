@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Agent, TokenAnalysisResult, TradeScanResult, YieldAnalysisResult } from '@/types/agents';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -59,6 +59,11 @@ export const agentsService = {
 
       const data = response.data;
 
+      // Check if the response contains an error
+      if (data.status === 'error' || data.error) {
+        throw new Error(data.error || 'Analysis failed');
+      }
+
       console.log(`✅ Ryu analysis completed for ${symbol}`);
 
       return {
@@ -101,12 +106,15 @@ export const agentsService = {
       console.error('Token analysis failed:', error);
 
       // Handle specific API errors more gracefully
-      if (error.response?.status === 404 && error.response?.data?.detail) {
-        // Extract the meaningful error message from 404 responses
-        throw new Error(error.response.data.detail);
+      if (error.response?.data?.error) {
+        // Handle backend error format: {"error": "message", "status": "error"}
+        throw new Error(error.response.data.error);
       } else if (error.response?.data?.detail) {
         // Handle other API errors with detail messages
         throw new Error(error.response.data.detail);
+      } else if (error.response?.status === 404) {
+        // Handle 404 errors
+        throw new Error(`Token ${symbol} not found on exchange`);
       } else {
         // Fallback for network or other errors
         throw new Error(`Failed to analyze ${symbol}: ${error instanceof Error ? error.message : 'Network Error'}`);
@@ -259,7 +267,7 @@ export const agentsService = {
 // Helper functions
 function getSpecialtyFromCapabilities(capabilities: string[]): string {
   if (capabilities.includes('token_analysis')) return 'Token Analysis';
-  if (capabilities.includes('market_scanning')) return 'Trade Scanner';
+  if (capabilities.includes('market_scanning')) return 'Futures Scanner';
   if (capabilities.includes('yield_optimization')) return 'Yield Farming';
   return 'AI Analysis';
 }
@@ -276,7 +284,7 @@ function getActionLabel(agentId: string): string {
 function getResultType(agentId: string): string {
   switch (agentId) {
     case 'ryu': return 'AI Token Analysis Report';
-    case 'yuki': return 'Market Opportunities';
+    case 'yuki': return 'Futures Trading Signals';
     case 'sakura': return 'DeFi Yield Options';
     default: return 'Analysis Results';
   }
@@ -295,12 +303,12 @@ function getDefaultAgents(): Agent[] {
     },
     {
       id: 'yuki',
-      name: 'Yuki Agent',
-      description: 'Advanced trade scanner for high-frequency opportunities across 500+ trading pairs.',
+      name: 'Yuki Futures Agent',
+      description: 'Advanced futures scanner generating LONG/SHORT signals across 500+ trading pairs.',
       status: 'online',
-      specialty: 'Trade Scanner',
+      specialty: 'Futures Scanner',
       actionLabel: 'Find Trades',
-      resultType: 'Market Opportunities',
+      resultType: 'Futures Trading Signals',
     },
     {
       id: 'sakura',
