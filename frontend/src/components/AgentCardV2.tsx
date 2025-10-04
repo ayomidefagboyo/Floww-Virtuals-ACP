@@ -13,7 +13,9 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle,
-  XCircle
+  XCircle,
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { Agent } from '@/types/agents_v2';
 
@@ -26,6 +28,14 @@ interface AgentCardV2Props {
     timestamp: string;
     summary?: string;
   };
+  usageInfo?: {
+    used_today: number;
+    daily_limit: number;
+    remaining: number;
+    can_request: boolean;
+    reset_time: string;
+  };
+  onLimitExceeded?: (agentName: string, usageInfo: any) => void;
 }
 
 const getAgentIcon = (agentId: string) => {
@@ -85,12 +95,25 @@ const getRiskLevelColor = (riskLevel: string) => {
   }
 };
 
-export default function AgentCardV2({ agent, onAction, isLoading, lastResult }: AgentCardV2Props) {
+export default function AgentCardV2({ 
+  agent, 
+  onAction, 
+  isLoading, 
+  lastResult,
+  usageInfo,
+  onLimitExceeded
+}: AgentCardV2Props) {
   const [tokenInput, setTokenInput] = useState('');
   const [investmentAmount, setInvestmentAmount] = useState('10000');
   const [inputError, setInputError] = useState('');
 
   const handleAction = async () => {
+    // Check usage limit first
+    if (usageInfo && !usageInfo.can_request) {
+      onLimitExceeded?.(agent.name, usageInfo);
+      return;
+    }
+
     if (agent.id === 'ryu') {
       // Token analysis requires input
       if (!tokenInput.trim()) {
@@ -298,6 +321,51 @@ export default function AgentCardV2({ agent, onAction, isLoading, lastResult }: 
           )}
         </div>
       </div>
+
+      {/* Usage Info */}
+      {usageInfo && (
+        <div className="mb-4 p-3 rounded-lg bg-primary-800/30 border border-primary-700/30">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-primary-200">Daily Usage</span>
+            <span className="text-sm text-primary-400">
+              {usageInfo.used_today} / {usageInfo.daily_limit}
+            </span>
+          </div>
+          
+          <div className="w-full bg-primary-900 rounded-full h-2 mb-2">
+            <div 
+              className={`h-2 rounded-full transition-all duration-300 ${
+                usageInfo.used_today >= usageInfo.daily_limit 
+                  ? 'bg-error-500' 
+                  : usageInfo.used_today >= usageInfo.daily_limit * 0.8
+                  ? 'bg-warning-500'
+                  : 'bg-accent-500'
+              }`}
+              style={{ width: `${Math.min((usageInfo.used_today / usageInfo.daily_limit) * 100, 100)}%` }}
+            />
+          </div>
+          
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1 text-primary-400">
+              {usageInfo.can_request ? (
+                <>
+                  <CheckCircle className="w-3 h-3 text-accent-400" />
+                  <span>{usageInfo.remaining} requests remaining</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-3 h-3 text-error-400" />
+                  <span>Daily limit reached</span>
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-1 text-primary-500">
+              <Clock className="w-3 h-3" />
+              <span>Resets tomorrow</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Action Button */}
       <button

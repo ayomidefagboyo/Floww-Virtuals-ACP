@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import AgentCardV2 from './AgentCardV2';
 import ResultsModal from './ResultsModal';
+import UsageLimitModal from './UsageLimitModal';
 import { Agent } from '@/types/agents_v2';
 import { agentsServiceV2 } from '@/services/api_v2';
 
@@ -20,11 +21,31 @@ export default function Dashboard() {
   const [progressLogs, setProgressLogs] = useState<string[]>([]);
   const [liveOpportunities, setLiveOpportunities] = useState<any[]>([]);
   const [cancelStream, setCancelStream] = useState<null | (() => void)>(null);
+  const [usageInfo, setUsageInfo] = useState<Record<string, any>>({});
+  const [limitModal, setLimitModal] = useState<{
+    isOpen: boolean;
+    agentName: string;
+    usageInfo: any;
+  }>({ isOpen: false, agentName: '', usageInfo: null });
 
   // Load agents on component mount
   useEffect(() => {
     loadAgents();
+    loadUsageInfo();
   }, []);
+
+  // Load usage info
+  const loadUsageInfo = async () => {
+    try {
+      const response = await fetch('/api/agents/usage');
+      if (response.ok) {
+        const data = await response.json();
+        setUsageInfo(data.usage || {});
+      }
+    } catch (error) {
+      console.error('Failed to load usage info:', error);
+    }
+  };
 
   const loadAgents = async () => {
     try {
@@ -119,13 +140,33 @@ export default function Dashboard() {
         console.log(`✅ ${agentId} analysis completed successfully`);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(`❌ ${agentId} analysis failed:`, error);
-      setError(`${agentId.charAt(0).toUpperCase() + agentId.slice(1)} analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Check if it's a rate limit error
+      if (error.response?.status === 429) {
+        const errorData = error.response.data;
+        setLimitModal({
+          isOpen: true,
+          agentName: errorData.detail?.message?.split(' ')[5] || agentId,
+          usageInfo: errorData.detail?.usage_info
+        });
+      } else {
+        setError(`${agentId.charAt(0).toUpperCase() + agentId.slice(1)} analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     } finally {
       // Reset agent status
       setAgentStatuses(prev => ({ ...prev, [agentId]: 'online' }));
     }
+  };
+
+  // Handle limit exceeded
+  const handleLimitExceeded = (agentName: string, usageInfo: any) => {
+    setLimitModal({
+      isOpen: true,
+      agentName,
+      usageInfo
+    });
   };
 
   // Update agents with current statuses
@@ -219,6 +260,8 @@ export default function Dashboard() {
                   <AgentCardV2
                     agent={agent}
                     onAction={handleAgentAction}
+                    usageInfo={usageInfo[agent.id]}
+                    onLimitExceeded={handleLimitExceeded}
                   />
                 </motion.div>
               ))}
@@ -249,6 +292,14 @@ export default function Dashboard() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         result={selectedResult}
+      />
+
+      {/* Usage Limit Modal */}
+      <UsageLimitModal
+        isOpen={limitModal.isOpen}
+        onClose={() => setLimitModal({ isOpen: false, agentName: '', usageInfo: null })}
+        agentName={limitModal.agentName}
+        usageInfo={limitModal.usageInfo}
       />
     </div>
   );

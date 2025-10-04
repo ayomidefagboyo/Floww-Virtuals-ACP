@@ -11,7 +11,7 @@ Provides reliable API endpoints for all trading agents with:
 import asyncio
 import logging
 from typing import Dict, Any, List
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 import json
 from pydantic import BaseModel, Field
@@ -21,6 +21,7 @@ from datetime import datetime
 from app.services.ryu_agent_v2 import get_ryu_agent
 from app.services.yuki_agent_v2 import get_yuki_agent
 from app.services.sakura_agent_v2 import get_sakura_agent
+from app.services.usage_tracker import usage_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,24 @@ class YieldAnalysisRequest(BaseModel):
     risk_preference: str = Field(default="conservative", description="Risk preference")
     investment_amount: float = Field(default=10000, description="Investment amount in USD", ge=0)
 
+
+# Usage endpoint
+@router.get("/usage")
+async def get_usage_info(request: Request):
+    """Get current usage information for all agents."""
+    try:
+        client_ip = request.client.host
+        usage_info = usage_tracker.get_all_usage(client_ip)
+        
+        return {
+            "user_ip": client_ip,
+            "daily_limit": 3,
+            "usage": usage_info,
+            "reset_time": usage_tracker._get_reset_time()
+        }
+    except Exception as e:
+        logger.error(f"Error getting usage info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Status endpoint
 @router.get("/status")
@@ -113,14 +132,29 @@ async def get_agents_status():
 
 # Ryu Agent - Token Analysis
 @router.post("/ryu/analyze")
-async def ryu_token_analysis(request: TokenAnalysisRequest):
+async def ryu_token_analysis(request: TokenAnalysisRequest, http_request: Request):
     """
     Ryu Agent - Comprehensive token analysis with guaranteed response.
 
     Provides detailed analysis including technical indicators,
     risk assessment, and trading recommendations.
     """
+    # Check rate limit first (outside try block)
+    client_ip = http_request.client.host
+    can_request, usage_info = usage_tracker.can_make_request(client_ip, "ryu")
+    
+    if not can_request:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "Rate limit exceeded",
+                "message": "You've reached the daily limit of 3 requests for Ryu Agent. Please try again tomorrow.",
+                "usage_info": usage_info
+            }
+        )
+
     try:
+        
         logger.info(f"🎯 Ryu token analysis requested for: {request.symbol}")
 
         # Get Ryu agent
@@ -134,6 +168,9 @@ async def ryu_token_analysis(request: TokenAnalysisRequest):
 
         # Format response
         if result.success:
+            # Record successful usage
+            usage_tracker.record_request(client_ip, "ryu")
+            
             analysis_data = result.data
             response = {
                 "agent": "ryu",
@@ -175,14 +212,29 @@ async def ryu_token_analysis(request: TokenAnalysisRequest):
 
 # Yuki Agent - Market Scanner
 @router.post("/yuki/scan")
-async def yuki_trade_scan(request: TradeScanRequest):
+async def yuki_trade_scan(request: TradeScanRequest, http_request: Request):
     """
     Yuki Agent - Market scanning for trading opportunities.
 
     Scans cryptocurrency markets and returns high-confidence
     trading opportunities with technical analysis.
     """
+    # Check rate limit first (outside try block)
+    client_ip = http_request.client.host
+    can_request, usage_info = usage_tracker.can_make_request(client_ip, "yuki")
+    
+    if not can_request:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "Rate limit exceeded",
+                "message": "You've reached the daily limit of 3 requests for Yuki Agent. Please try again tomorrow.",
+                "usage_info": usage_info
+            }
+        )
+
     try:
+        
         logger.info(f"🔍 Yuki trade scan requested: {request.scan_type}")
 
         # Get Yuki agent
@@ -196,6 +248,9 @@ async def yuki_trade_scan(request: TradeScanRequest):
 
         # Format response
         if result.success:
+            # Record successful usage
+            usage_tracker.record_request(client_ip, "yuki")
+            
             scan_data = result.data
             response = {
                 "agent": "yuki",
@@ -288,14 +343,29 @@ async def yuki_trade_scan_stream():
 
 # Sakura Agent - Yield Analysis
 @router.post("/sakura/yield")
-async def sakura_yield_analysis(request: YieldAnalysisRequest):
+async def sakura_yield_analysis(request: YieldAnalysisRequest, http_request: Request):
     """
     Sakura Agent - DeFi yield farming analysis.
 
     Provides conservative yield farming opportunities with
     risk assessment and portfolio allocation recommendations.
     """
+    # Check rate limit first (outside try block)
+    client_ip = http_request.client.host
+    can_request, usage_info = usage_tracker.can_make_request(client_ip, "sakura")
+    
+    if not can_request:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "Rate limit exceeded",
+                "message": "You've reached the daily limit of 3 requests for Sakura Agent. Please try again tomorrow.",
+                "usage_info": usage_info
+            }
+        )
+
     try:
+        
         logger.info(f"🌸 Sakura yield analysis requested: {request.analysis_type}")
 
         # Import and get the real Sakura Pendle agent
@@ -310,6 +380,9 @@ async def sakura_yield_analysis(request: YieldAnalysisRequest):
         }
 
         analysis_result = await sakura_agent._execute_analysis(analysis_params)
+
+        # Record successful usage
+        usage_tracker.record_request(client_ip, "sakura")
 
         # Format response to match API structure
         response = {
