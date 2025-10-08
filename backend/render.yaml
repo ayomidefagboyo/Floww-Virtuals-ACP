@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: floww-virtuals-backend
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.18
+      - key: PORT
+        generateValue: true
+      - key: HOST
+        value: 0.0.0.0
+      - key: DEBUG
+        value: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PROJECT_NAME
+        value: Floww X Virtuals ACP
+      - key: VERSION
+        value: 1.0.0
+      - key: DESCRIPTION
+        value: AI Trading Agents with Real Market Data
